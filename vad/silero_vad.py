@@ -7,9 +7,8 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Generator, Callable
+from typing import List, Optional
 import numpy as np
-import onnxruntime as ort
 
 from ..config.settings import Config
 from ..utils.logger import logger, log_stage, log_metric
@@ -39,163 +38,57 @@ class SpeechSegment:
 
 class SileroVAD:
     """
-    Silero VAD model wrapper.
+    Silero VAD model wrapper using torch hub.
     CPU-friendly voice activity detection.
     """
 
-    # Silero VAD constants
-    HOP_SIZE = 512  # Samples per frame
-    SAMPLE_RATE = 16000  # Fixed sample rate for Silero
+    HOP_SIZE = 512
+    SAMPLE_RATE = 16000
 
     def __init__(self, model_path: str, threshold: float = 0.5):
         self.model_path = model_path
         self.threshold = threshold
-
-        # Initialize model
         self._init_model()
 
     def _init_model(self):
-        """Initialize ONNX model for Silero VAD."""
-        # Download model if not present
-        if not os.path.exists(self.model_path):
-            self._download_model()
+        """Initialize Silero VAD model from torch hub."""
+        import torch
 
-        # Load ONNX model
-        opts = ort.SessionOptions()
-        # Use newer onnxruntime API
-        try:
-            opts.intra_num_threads = 1
-            opts.inter_op_num_threads = 1
-        except AttributeError:
-            pass  # Older/newer versions don't need these
-        opts.log_verbosity_level = 3
-
-        self.session = ort.InferenceSession(
-            self.model_path,
-            sess_options=opts,
-            providers=['CPUExecutionProvider']
+        logger.info("Loading Silero VAD model from torch hub...")
+        self.model, self.utils = torch.hub.load(
+            repo_or_dir='snakers4/silero-vad',
+            model='silero_vad',
+            force_reload=False,
+            trust_repo=True
         )
+        self.model.eval()
+        logger.info("Silero VAD loaded from torch hub")
 
-        # Get model inputs/outputs
-        self.inputs = {inp.name: inp for inp in self.session.get_inputs()}
-        self.outputs = {out.name: out for out in self.session.get_outputs()}
+    def detect_speech(self, audio: np.ndarray) -> List[tuple]:
+        """Detect speech segments in audio buffer."""
+        import torch
 
-        # Initialize hidden states
-        self._reset_states()
-
-        logger.info(f"Silero VAD loaded: {self.model_path}")
-
-    def _download_model(self):
-        """Download Silero VAD model from official source."""
-        import urllib.request
-
-        model_dir = os.path.dirname(self.model_path)
-        os.makedirs(model_dir, exist_ok=True)
-
-        url = "https://github.com/snakers4/silero-vad/raw/master/files/silero_vad.onnx"
-        logger.info(f"Downloading Silero VAD model from {url}")
-
-        urllib.request.urlretrieve(url, self.model_path)
-        logger.info(f"Model downloaded to {self.model_path}")
-
-    def _reset_states(self):
-        """Reset hidden states for new audio stream."""
-        self.h = np.zeros((2, 1, 64), dtype=np.float32)
-        self.c = np.zeros((2, 1, 64), dtype=np.float32)
-
-    def _process_chunk(self, audio_chunk: np.ndarray) -> float:
-        """
-        Process a single audio chunk through VAD.
-        Returns probability of speech.
-
-        Args:
-            audio_chunk: Float32 array of shape (HOP_SIZE,) or (HOP_SIZE, 1)
-
-        Returns:
-            float: Speech probability [0, 1]
-        """
-        # Ensure correct shape
-        if audio_chunk.ndim == 1:
-            audio_chunk = audio_chunk.reshape(1, -1)
-        elif audio_chunk.shape[0] == audio_chunk.size:
-            audio_chunk = audio_chunk.reshape(1, -1)
-
-        # Run inference
-        inputs = {
-            'input': audio_chunk,
-            'h': self.h,
-            'c': self.c
-        }
-
-        outputs = self.session.run(None, inputs)
-
-        # Extract speech probability and updated states
-        speech_prob = outputs[0][0, 0]  # Shape: (1, 1)
-        self.h = outputs[1]
-        self.c = outputs[2]
-
-        return float(speech_prob)
-
-    def detect_speech(
-        self,
-        audio: np.ndarray,
-        return_timestamps: bool = True
-    ) -> List[tuple]:
-        """
-        Detect speech segments in audio buffer.
-
-        Args:
-            audio: Float32 array of audio samples (1D or 2D)
-            return_timestamps: Return frame-level timestamps
-
-        Returns:
-            List of (start_frame, end_frame, speech_prob_mean) tuples
-        """
-        # Ensure mono
         if audio.ndim == 2:
             audio = audio[:, 0]
 
-        # Reset states for new segment
-        self._reset_states()
+        audio_tensor = torch.from_numpy(audio.astype(np.float32))
 
-        # Calculate number of chunks
-        n_chunks = len(audio) // self.HOP_SIZE
-        if n_chunks == 0:
-            return []
+        # Get speech timestamps using the utility function
+        speech_timestamps = self.utils[0](
+            audio_tensor,
+            self.model,
+            threshold=self.threshold,
+            sampling_rate=self.SAMPLE_RATE,
+            min_speech_duration_ms=300,
+            min_silence_duration_ms=100
+        )
 
-        # Process each chunk
-        speech_probs = []
-        for i in range(n_chunks):
-            chunk = audio[i * self.HOP_SIZE:(i + 1) * self.HOP_SIZE].astype(np.float32)
-            prob = self._process_chunk(chunk)
-            speech_probs.append(prob)
-
-        # Find speech segments
         segments = []
-        in_speech = False
-        start_frame = 0
-
-        for i, prob in enumerate(speech_probs):
-            if prob >= self.threshold and not in_speech:
-                # Speech starts
-                in_speech = True
-                start_frame = i
-            elif prob < self.threshold and in_speech:
-                # Speech ends
-                in_speech = False
-                end_frame = i
-                segments.append((
-                    start_frame * self.HOP_SIZE,
-                    end_frame * self.HOP_SIZE,
-                    np.mean(speech_probs[start_frame:end_frame])
-                ))
-
-        # Handle speech continuing to end
-        if in_speech:
+        for ts in speech_timestamps:
             segments.append((
-                start_frame * self.HOP_SIZE,
-                len(speech_probs) * self.HOP_SIZE,
-                np.mean(speech_probs[start_frame:])
+                ts['start'],
+                ts['end'],
+                0.8  # Default confidence
             ))
 
         return segments
@@ -213,11 +106,9 @@ class VADProcessor:
             model_path=config.vad.model_path,
             threshold=config.vad.threshold
         )
-
         self.min_segment_duration = config.vad.min_segment_duration
         self.silence_padding = config.vad.silence_padding
         self.max_segment_duration = config.vad.max_segment_duration
-
         logger.info(f"VADProcessor initialized: threshold={config.vad.threshold}")
 
     def process_audio_chunk(
@@ -225,64 +116,41 @@ class VADProcessor:
         audio: np.ndarray,
         reference_time: datetime
     ) -> List[SpeechSegment]:
-        """
-        Process an audio chunk and extract speech segments.
-
-        Args:
-            audio: Audio buffer as float32 array
-            reference_time: Timestamp for the start of this audio
-
-        Returns:
-            List of SpeechSegment objects
-        """
+        """Process an audio chunk and extract speech segments."""
         import time
         start_time = time.time()
 
-        # Detect speech
         segments = self.vad.detect_speech(audio)
         log_metric("VAD", "detection_time", time.time() - start_time, "s")
 
-        # Convert to SpeechSegment objects
         speech_segments = []
-
         for start_sample, end_sample, mean_prob in segments:
-            # Apply silence padding
             padding_samples = int(self.silence_padding * SileroVAD.SAMPLE_RATE)
             start_sample = max(0, start_sample - padding_samples)
             end_sample = min(len(audio), end_sample + padding_samples)
 
-            # Calculate timing
             duration = (end_sample - start_sample) / SileroVAD.SAMPLE_RATE
 
-            # Filter by minimum duration
             if duration < self.min_segment_duration:
-                log_stage("VAD", f"Rejecting segment < {self.min_segment_duration}s: {duration:.2f}s")
                 continue
 
-            # Split if too long
             if duration > self.max_segment_duration:
-                log_stage("VAD", f"Splitting segment > {self.max_segment_duration}s")
                 speech_segments.extend(
                     self._split_long_segment(audio, start_sample, end_sample, reference_time)
                 )
             else:
-                # Create segment
                 segment_audio = audio[start_sample:end_sample]
                 start_offset = start_sample / SileroVAD.SAMPLE_RATE
 
                 segment = SpeechSegment(
                     start_time=reference_time,
-                    end_time=datetime.fromtimestamp(
-                        reference_time.timestamp() + duration
-                    ),
+                    end_time=datetime.fromtimestamp(reference_time.timestamp() + duration),
                     audio=segment_audio,
                     sample_rate=SileroVAD.SAMPLE_RATE,
                     start_offset_seconds=start_offset
                 )
-
                 speech_segments.append(segment)
-
-                log_stage("VAD", f"Segment: {duration:.2f}s, prob={mean_prob:.2f}")
+                log_stage("VAD", f"Segment: {duration:.2f}s")
 
         return speech_segments
 
@@ -300,36 +168,31 @@ class VADProcessor:
         current_start = start_sample
         while current_start < end_sample:
             current_end = min(current_start + max_samples, end_sample)
-
             segment_audio = audio[current_start:current_end]
             duration = len(segment_audio) / SileroVAD.SAMPLE_RATE
             start_offset = current_start / SileroVAD.SAMPLE_RATE
 
             segment = SpeechSegment(
                 start_time=reference_time,
-                end_time=datetime.fromtimestamp(
-                    reference_time.timestamp() + duration
-                ),
+                end_time=datetime.fromtimestamp(reference_time.timestamp() + duration),
                 audio=segment_audio,
                 sample_rate=SileroVAD.SAMPLE_RATE,
                 start_offset_seconds=start_offset
             )
-
             segments.append(segment)
             current_start = current_end
 
         return segments
 
 
-# Convenience function for testing
-def test_vad(audio_path: str, model_path: str = "./models/silero_vad.onnx"):
+def test_vad(audio_path: str):
     """Test VAD on a pre-recorded audio file."""
     import librosa
 
     print(f"Loading audio: {audio_path}")
     audio, sr = librosa.load(audio_path, sr=16000, mono=True)
 
-    print(f"Audio loaded: {len(audio)} samples, {len(audio)/sr:.2f}s")
+    print(f"Audio: {len(audio)/sr:.2f}s")
 
     vad_processor = VADProcessor(Config())
     segments = vad_processor.process_audio_chunk(audio, datetime.now())
@@ -345,5 +208,3 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
         test_vad(sys.argv[1])
-    else:
-        print("Usage: python -m voice_journal.vad <audio_file>")
