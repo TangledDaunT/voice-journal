@@ -1,0 +1,86 @@
+# Voice Journal Configuration
+# All tunable parameters for the voice journal daemon
+
+# === Audio Capture (Stage 1) ===
+audio:
+  sample_rate: 16000
+  channels: 1
+  block_size: 512
+  ring_buffer_seconds: 30
+  keep_audio: false  # Set to true to retain audio clips after transcription
+  audio_storage_path: "./audio_clips"
+
+# === Voice Activity Detection (Stage 2) ===
+vad:
+  model_path: "./models/silero_vad.onnx"
+  threshold: 0.5
+  min_segment_duration: 0.5  # Discard segments shorter than this (seconds)
+  silence_padding: 0.3  # Pad speech segments with silence (seconds)
+  max_segment_duration: 30.0  # Split segments longer than this (seconds)
+
+# === Speaker Identification (Stage 3) ===
+speaker:
+  profiles:
+    shreyansh:
+      pitch_mean: 120.0  # Hz (male voice)
+      pitch_std: 20.0
+      spectral_centroid_mean: 2000.0
+      spectral_centroid_std: 500.0
+      threshold_multiplier: 2.0  # Accept if within 2 std devs
+    shivangi:
+      pitch_mean: 200.0  # Hz (female voice)
+      pitch_std: 30.0
+      spectral_centroid_mean: 3000.0
+      spectral_centroid_std: 600.0
+      threshold_multiplier: 2.0
+  calibration_file: "./config/voice_profiles.json"
+
+# === ASR / Transcription (Stage 4) ===
+asr:
+  model_size: "small"  # Options: tiny, base, small, medium
+  compute_type: "int8"  # Options: int8, int16, float16, float32
+  device: "cpu"
+  language: null  # Auto-detect (null) or force: "en", "hi", etc.
+  beam_size: 5
+  vad_filter: true
+
+# === Conversation Grouping (Stage 5) ===
+conversation:
+  gap_seconds: 90  # Group segments within this gap into a conversation
+  min_segments: 2  # Minimum segments to form a conversation
+  unknown_voice_ratio_threshold: 0.7  # If >70% unknown voices = likely media
+  rapid_alternation_threshold: 3.0  # Seconds between speakers for rapid alternation
+
+# === LLM Classification (Stage 6) ===
+llm:
+  model: "llama3.2:3b"  # Options: llama3.2:3b, phi3:mini, gemma2:2b
+  ollama_host: "http://localhost:11434"
+  timeout_seconds: 30
+  max_retries: 1
+  temperature: 0.1
+  max_tokens: 500
+
+# === Obsidian Output (Stage 7) ===
+obsidian:
+  vault_path: "./obsidian_vault"
+  daily_notes_dir: "VoiceJournal/Daily"
+  conversation_notes_dir: "VoiceJournal/Conversations"
+  template_daily: null  # Use default if null
+  template_conversation: null
+
+# === SQLite Index (Stage 8) ===
+database:
+  path: "./data/voice_journal.db"
+  enable_fts: true
+
+# === Daemon Settings ===
+daemon:
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_file: "./logs/voice_journal.log"
+  mute_file: "./data/mute_flag"  # Touch this file to mute
+  health_check_interval: 60  # Seconds between health checks
+
+# === System Integration ===
+system:
+  notify_on_mute: true  # Desktop notification when muted/unmuted
+  hotkey_mute: "ctrl+shift+m"  # Global hotkey for mute toggle (requires pynput)
