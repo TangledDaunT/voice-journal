@@ -124,15 +124,15 @@ def send_whatsapp_message(message, number=SHREYANSH_NUMBER):
         bool: True if successful
     """
     try:
-        # Clean number format
+        # Clean number format (remove + and formatting)
         clean_number = number.replace("+", "").replace("-", "").replace(" ", "")
 
-        # Use wacli to send message
+        # Use wacli to send message with correct syntax
         result = subprocess.run(
-            ["wacli", "send", "text", clean_number, message],
+            ["wacli", "send", "text", "--to", clean_number, "--message", message],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=60
         )
 
         if result.returncode == 0:
