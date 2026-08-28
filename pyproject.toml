@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voice_journal"
+version = "1.0.0"
+description = "Local, always-on voice journal that logs to Obsidian"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Shreyansh"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Desktop Environment",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "sounddevice>=0.4.6",
+    "numpy>=1.24.0",
+    "scipy>=1.11.0",
+    "onnxruntime>=1.16.0",
+    "faster-whisper>=1.0.0",
+    "librosa>=0.10.1",
+    "requests>=2.31.0",
+    "pyyaml>=6.0.1",
+    "python-slugify>=8.0.1",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.0.0",
+    "loguru>=0.7.2",
+    "pynput>=1.7.6",
+    "plyer>=2.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+voice-journal = "voice_journal.daemon:main"
+voice-journal-mute = "voice_journal.utils.mute:main"
+voice-journal-calibrate = "voice_journal.speaker_id.calibrate:main"
+
+[project.urls]
+Homepage = "https://github.com/shreyansh/voice_journal"
+Documentation = "https://github.com/shreyansh/voice_journal#readme"
+
+[tool.setuptools]
+packages = ["voice_journal", "voice_journal.*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
