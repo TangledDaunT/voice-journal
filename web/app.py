@@ -5,11 +5,14 @@ Provides real-time monitoring and daily summaries via Tailscale.
 
 import sys
 import os
+import time
+import json
+import threading
+from queue import Queue
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Flask, render_template, jsonify, request, send_from_directory
+from flask import Flask, render_template, jsonify, request, send_from_directory, Response
 from flask_cors import CORS
-import json
 from datetime import datetime, timedelta
 from pathlib import Path
 import sqlite3
@@ -23,6 +26,14 @@ BASE_DIR = Path(__file__).parent.parent
 DB_PATH = BASE_DIR / "data" / "voice_journal.db"
 VAULT_PATH = BASE_DIR / "obsidian_vault"
 CONFIG_PATH = BASE_DIR / "config" / "default_config.yaml"
+
+# Real-time update subscribers
+subscribers = []
+subscriber_lock = threading.Lock()
+
+# Recent conversations cache for real-time updates
+recent_conversations = []
+recent_lock = threading.Lock()
 
 
 def get_db_connection():
@@ -305,6 +316,139 @@ def serve_note(filename):
         content = f.read()
 
     return jsonify({"content": content, "path": filename})
+
+
+@app.route('/api/stream')
+def stream():
+    """Server-Sent Events endpoint for real-time updates."""
+    def event_stream():
+        # Send initial data
+        yield f"data: {json.dumps({'type': 'connected', 'timestamp': datetime.now().isoformat()})}\n\n"
+
+        # Keep connection alive and send updates
+        last_check = datetime.now()
+        last_conversation_id = get_last_conversation_id()
+
+        while True:
+            time.sleep(2)  # Check every 2 seconds
+
+            try:
+                current_last_id = get_last_conversation_id()
+
+                # Check for new conversations
+                if current_last_id and current_last_id != last_conversation_id:
+                    # New conversation detected!
+                    last_conversation_id = current_last_id
+
+                    # Get latest conversation details
+                    conv = get_conversation_details(current_last_id)
+
+                    # Send update to client
+                    yield f"data: {json.dumps({'type': 'new_conversation', 'conversation': conv, 'timestamp': datetime.now().isoformat()})}\n\n"
+
+                    # Also send updated stats
+                    stats = get_current_stats()
+                    yield f"data: {json.dumps({'type': 'stats_update', 'stats': stats, 'timestamp': datetime.now().isoformat()})}\n\n"
+
+                # Send heartbeat every 30 seconds
+                if (datetime.now() - last_check).seconds >= 30:
+                    yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': datetime.now().isoformat()})}\n\n"
+                    last_check = datetime.now()
+
+            except Exception as e:
+                # Send error but keep connection
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(
+        event_stream(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive'
+        }
+    )
+
+
+def get_last_conversation_id():
+    """Get the ID of the most recent conversation."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT MAX(conversation_id) as max_id FROM conversations")
+        row = cursor.fetchone()
+        conn.close()
+        return row["max_id"] if row and row["max_id"] else 0
+    except:
+        return 0
+
+
+def get_conversation_details(conv_id):
+    """Get details for a specific conversation."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT conversation_id, date, start_time, end_time,
+                   duration_seconds, participants, source_type,
+                   is_shivangi_conversation, quality, languages, summary
+            FROM conversations WHERE conversation_id = ?
+        """, (conv_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return {
+                "conversation_id": row["conversation_id"],
+                "date": row["date"],
+                "start_time": row["start_time"],
+                "end_time": row["end_time"],
+                "duration_seconds": row["duration_seconds"],
+                "participants": json.loads(row["participants"]) if row["participants"] else [],
+                "source_type": row["source_type"],
+                "is_shivangi_conversation": bool(row["is_shivangi_conversation"]),
+                "quality": row["quality"],
+                "languages": json.loads(row["languages"]) if row["languages"] else [],
+                "summary": row["summary"] or ""
+            }
+        return None
+    except:
+        return None
+
+
+def get_current_stats():
+    """Get current day stats."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN is_shivangi_conversation = 1 THEN 1 ELSE 0 END) as with_shivangi,
+                SUM(CASE WHEN source_type = 'self_talk' THEN 1 ELSE 0 END) as self_talk,
+                SUM(CASE WHEN source_type = 'media_or_unknown' THEN 1 ELSE 0 END) as media
+            FROM conversations
+            WHERE date = ?
+        """, (today,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        return {
+            "total_conversations": row["total"] if row and row["total"] else 0,
+            "with_shivangi": row["with_shivangi"] if row and row["with_shivangi"] else 0,
+            "self_talk": row["self_talk"] if row and row["self_talk"] else 0,
+            "media_flagged": row["media"] if row and row["media"] else 0
+        }
+    except:
+        return {
+            "total_conversations": 0,
+            "with_shivangi": 0,
+            "self_talk": 0,
+            "media_flagged": 0
+        }
 
 
 if __name__ == '__main__':

@@ -280,8 +280,8 @@
     <div class="container">
         <header>
             <h1>
-                <span class="status-dot"></span>
-                Voice Journal
+                <span class="status-dot" id="live-indicator"></span>
+                Voice Journal <span id="live-badge" style="font-size: 12px; color: #4ade80; margin-left: 10px;">● LIVE</span>
             </h1>
             <div>
                 <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
@@ -498,6 +498,163 @@
 
         // Auto-refresh every 30 seconds
         setInterval(loadDashboard, 30000);
+
+        // Real-time updates via Server-Sent Events
+        let eventSource;
+
+        function connectLiveUpdates() {
+            eventSource = new EventSource('/api/stream');
+
+            eventSource.onopen = function(e) {
+                console.log('Live updates connected');
+                document.getElementById('live-badge').textContent = '● LIVE';
+                document.getElementById('live-badge').style.color = '#4ade80';
+            };
+
+            eventSource.onmessage = function(e) {
+                const data = JSON.parse(e.data);
+                console.log('Received update:', data.type);
+
+                if (data.type === 'new_conversation') {
+                    // New conversation detected!
+                    showNotification('New Conversation!', data.conversation.summary || 'Click to view');
+                    loadDashboard(); // Refresh all data
+                    playNotificationSound();
+                } else if (data.type === 'stats_update') {
+                    // Update stats without full refresh
+                    updateStatsDirect(data.stats);
+                } else if (data.type === 'heartbeat') {
+                    // Keepalive - do nothing
+                    console.log('Heartbeat received');
+                } else if (data.type === 'error') {
+                    console.error('Stream error:', data.message);
+                }
+            };
+
+            eventSource.onerror = function(e) {
+                console.error('EventSource error:', e);
+                document.getElementById('live-badge').textContent = '○ RECONNECTING...';
+                document.getElementById('live-badge').style.color = '#fbbf24';
+
+                // Reconnect after 5 seconds
+                setTimeout(function() {
+                    console.log('Attempting to reconnect...');
+                    connectLiveUpdates();
+                }, 5000);
+            };
+        }
+
+        function updateStatsDirect(stats) {
+            // Update stats without full page reload
+            if (stats.total_conversations !== undefined) {
+                animateValue('total-conv', stats.total_conversations);
+            }
+            if (stats.with_shivangi !== undefined) {
+                animateValue('with-shivangi', stats.with_shivangi);
+            }
+            if (stats.self_talk !== undefined) {
+                animateValue('self-talk', stats.self_talk);
+            }
+            if (stats.media_flagged !== undefined) {
+                animateValue('media-flagged', stats.media_flagged);
+            }
+        }
+
+        function animateValue(elementId, newValue) {
+            const element = document.getElementById(elementId);
+            const currentValue = parseInt(element.textContent) || 0;
+
+            if (newValue !== currentValue) {
+                // Flash effect
+                element.style.transform = 'scale(1.2)';
+                element.style.transition = 'transform 0.3s';
+
+                setTimeout(() => {
+                    element.textContent = newValue;
+                    element.style.transform = 'scale(1)';
+                }, 150);
+            }
+        }
+
+        function showNotification(title, message) {
+            // Show browser notification
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, {
+                    body: message,
+                    icon: '🎤'
+                });
+            }
+
+            // Also show in-page notification
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: rgba(74, 222, 128, 0.95);
+                color: #1a1a2e;
+                padding: 15px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                z-index: 9999;
+                animation: slideIn 0.3s ease-out;
+                max-width: 300px;
+            `;
+            notification.innerHTML = `
+                <strong>🎤 ${title}</strong><br>
+                <span style="font-size: 13px;">${message}</span>
+            `;
+
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.animation = 'slideOut 0.3s ease-out';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        function playNotificationSound() {
+            // Play a subtle notification sound
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                oscillator.frequency.value = 800;
+                oscillator.type = 'sine';
+                gainNode.gain.value = 0.1;
+
+                oscillator.start();
+                oscillator.stop(audioContext.currentTime + 0.1);
+            } catch (e) {
+                console.log('Audio notification failed');
+            }
+        }
+
+        // Request notification permission on load
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        // Add CSS for animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Start live updates
+        connectLiveUpdates();
     </script>
 </body>
 </html>
