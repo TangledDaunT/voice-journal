@@ -16,10 +16,14 @@ models/*.onnx
 models/*.pt
 models/*.bin
 
-# Audio files (keep calibration samples)
-# *.m4a
-# *.wav
+# Audio files
 audio_clips/
+calibration_*.m4a
+calibration_*.wav
+
+# Test files
+test_data/
+test_vault/
 
 # Data
 data/
