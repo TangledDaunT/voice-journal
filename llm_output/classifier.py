@@ -9,9 +9,9 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Any
 import requests
 
-from ..config.settings import Config
-from ..conversation.grouping import ConversationUnit
-from ..utils.logger import logger, log_stage, log_metric
+from config.settings import Config
+from conversation.grouping import ConversationUnit
+from utils.logger import logger, log_stage, log_metric
 
 
 # Classification schema for structured output

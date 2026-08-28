@@ -11,8 +11,8 @@ from typing import Optional, Callable
 from pathlib import Path
 import numpy as np
 import sounddevice as sd
-from ..config.settings import Config
-from ..utils.logger import logger, log_stage
+from config.settings import Config
+from utils.logger import logger, log_stage
 
 
 @dataclass

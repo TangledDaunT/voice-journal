@@ -11,9 +11,9 @@ import warnings
 
 import numpy as np
 
-from ..config.settings import Config, load_voice_profiles, SpeakerProfile
-from ..vad.silero_vad import SpeechSegment
-from ..utils.logger import logger, log_stage, log_metric
+from config.settings import Config, load_voice_profiles, SpeakerProfile
+from vad.silero_vad import SpeechSegment
+from utils.logger import logger, log_stage, log_metric
 
 warnings.filterwarnings("ignore", message="PySoundFile failed.*")
 
@@ -259,8 +259,8 @@ class SpeakerIdentifier:
 
 def test_speaker_id(audio_path: str, config_path: str = None):
     """Test speaker identification on an audio file."""
-    from ..vad.silero_vad import VADProcessor
-    from ..config.settings import Config
+    from vad.silero_vad import VADProcessor
+    from config.settings import Config
     from datetime import datetime
 
     print(f"\nTesting speaker identification on: {audio_path}")

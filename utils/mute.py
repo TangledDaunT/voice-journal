@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime
 import argparse
 
-from ..config.settings import Config
+from config.settings import Config
 
 
 class MuteController:

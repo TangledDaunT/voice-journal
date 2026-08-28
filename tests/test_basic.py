@@ -1,7 +1,13 @@
 """Basic unit tests for voice journal package."""
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import pytest
-from voice_journal.config.settings import Config
+from config.settings import Config
 
 
 class TestConfig:
@@ -25,14 +31,14 @@ class TestPipeline:
 
     def test_imports(self):
         """Test all modules can be imported."""
-        from voice_journal.audio_capture import AudioCapture
-        from voice_journal.vad import VADProcessor
-        from voice_journal.speaker_id import SpeakerIdentifier
-        from voice_journal.asr import ASRProcessor
-        from voice_journal.conversation import ConversationGrouper
-        from voice_journal.llm_output import LLMClassifier
-        from voice_journal.obsidian import ObsidianWriter
-        from voice_journal.storage import SQLiteStore
+        from audio_capture.capture import AudioCapture
+        from vad.silero_vad import VADProcessor
+        from speaker_id.identification import SpeakerIdentifier
+        from asr.transcriber import ASRProcessor
+        from conversation.grouping import ConversationGrouper
+        from llm_output.classifier import LLMClassifier
+        from obsidian.output import ObsidianWriter
+        from storage.database import SQLiteStore
 
         assert AudioCapture is not None
         assert VADProcessor is not None

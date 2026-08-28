@@ -11,10 +11,10 @@ from typing import List, Dict, Optional
 import yaml
 from slugify import slugify
 
-from ..config.settings import Config
-from ..conversation.grouping import ConversationUnit
-from ..llm_output.classifier import ClassificationResult
-from ..utils.logger import logger, log_stage
+from config.settings import Config
+from conversation.grouping import ConversationUnit
+from llm_output.classifier import ClassificationResult
+from utils.logger import logger, log_stage
 
 
 @dataclass

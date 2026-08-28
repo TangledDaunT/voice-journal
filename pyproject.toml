@@ -59,8 +59,10 @@ voice-journal-calibrate = "voice_journal.speaker_id.calibrate:main"
 Homepage = "https://github.com/shreyansh/voice_journal"
 Documentation = "https://github.com/shreyansh/voice_journal#readme"
 
-[tool.setuptools]
-packages = ["voice_journal", "voice_journal.*"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*"]
+exclude = ["tests*", "test*", "*.test*"]
 
 [tool.black]
 line-length = 88

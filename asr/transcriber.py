@@ -14,10 +14,10 @@ import warnings
 
 import numpy as np
 
-from ..config.settings import Config
-from ..vad.silero_vad import SpeechSegment
-from ..speaker_id.identification import SpeakerMatch
-from ..utils.logger import logger, log_stage, log_metric
+from config.settings import Config
+from vad.silero_vad import SpeechSegment
+from speaker_id.identification import SpeakerMatch
+from utils.logger import logger, log_stage, log_metric
 
 
 @dataclass
@@ -250,9 +250,9 @@ class ASRProcessor:
 
 def test_asr(audio_path: str, config_path: str = None):
     """Test ASR on an audio file."""
-    from ..config.settings import Config
-    from ..vad.silero_vad import VADProcessor
-    from ..speaker_id.identification import SpeakerIdentifier
+    from config.settings import Config
+    from vad.silero_vad import VADProcessor
+    from speaker_id.identification import SpeakerIdentifier
     from datetime import datetime
 
     print(f"\nTesting ASR on: {audio_path}")

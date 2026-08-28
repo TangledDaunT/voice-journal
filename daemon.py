@@ -12,16 +12,16 @@ from typing import Optional
 import queue
 import os
 
-from .config.settings import Config
-from .audio_capture import AudioCapture
-from .vad import VADProcessor, SpeechSegment
-from .speaker_id import SpeakerIdentifier, SpeakerMatch
-from .asr import ASRProcessor, TranscriptSegment
-from .conversation import ConversationGrouper, ConversationUnit
-from .llm_output import LLMClassifier, ClassificationResult
-from .obsidian import ObsidianWriter
-from .storage import SQLiteStore
-from .utils.logger import setup_logging, logger, log_stage
+from config.settings import Config
+from audio_capture.capture import AudioCapture
+from vad.silero_vad import VADProcessor, SpeechSegment
+from speaker_id.identification import SpeakerIdentifier, SpeakerMatch
+from asr.transcriber import ASRProcessor, TranscriptSegment
+from conversation.grouping import ConversationGrouper, ConversationUnit
+from llm_output.classifier import LLMClassifier, ClassificationResult
+from obsidian.output import ObsidianWriter
+from storage.database import SQLiteStore
+from utils.logger import setup_logging, logger, log_stage
 
 
 class VoiceJournalDaemon:
@@ -245,7 +245,7 @@ class VoiceJournalDaemon:
     def _health_check(self):
         """Perform health check on all stages."""
         # Check Ollama availability
-        from .llm_output import check_ollama_model
+        from llm_output.classifier import check_ollama_model
 
         ollama_ok = check_ollama_model(
             self.config.llm.model,
@@ -266,7 +266,7 @@ class VoiceJournalDaemon:
 
     def _vad_worker(self):
         """Worker thread for VAD processing."""
-        from .audio_capture import AudioChunk
+        from audio_capture.capture import AudioChunk
 
         audio_buffer = []
         buffer_duration = 0.0

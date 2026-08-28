@@ -9,9 +9,9 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Set, Optional, Tuple
 from collections import defaultdict
 
-from ..config.settings import Config
-from ..asr.transcriber import TranscriptSegment
-from ..utils.logger import logger, log_stage, log_metric
+from config.settings import Config
+from asr.transcriber import TranscriptSegment
+from utils.logger import logger, log_stage, log_metric
 
 
 @dataclass
@@ -243,10 +243,10 @@ class ConversationGrouper:
 def test_grouping(audio_path: str):
     """Test conversation grouping on an audio file."""
     from datetime import datetime
-    from ..config.settings import Config
-    from ..vad.silero_vad import VADProcessor
-    from ..speaker_id.identification import SpeakerIdentifier
-    from ..asr.transcriber import ASRProcessor
+    from config.settings import Config
+    from vad.silero_vad import VADProcessor
+    from speaker_id.identification import SpeakerIdentifier
+    from asr.transcriber import ASRProcessor
     import librosa
 
     print(f"\nTesting conversation grouping on: {audio_path}")
