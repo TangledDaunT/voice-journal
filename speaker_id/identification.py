@@ -238,8 +238,8 @@ class SpeakerIdentifier:
         return SpeakerMatch(
             speaker=speaker,
             confidence=confidence,
-            pitch_distance=match_details['details'].get('pitch_z', float('inf')),
-            spectral_distance=match_details['details'].get('spectral_z', float('inf')),
+            pitch_distance=match_details.get('details', {}).get('pitch_z', float('inf')),
+            spectral_distance=match_details.get('details', {}).get('spectral_z', float('inf')),
             details=match_details
         )
 
