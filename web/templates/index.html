@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Journal Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #eee;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #4ade80;
+        }
+
+        .stat-card.pink .value {
+            color: #f472b6;
+        }
+
+        .stat-card.blue .value {
+            color: #60a5fa;
+        }
+
+        .stat-card.yellow .value {
+            color: #fbbf24;
+        }
+
+        .section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .section h2 {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+
+        .conversation-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .conversation-item {
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .conversation-item:hover {
+            background: rgba(255,255,255,0.1);
+            transform: translateX(5px);
+        }
+
+        .conversation-item .time {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .conversation-item .summary {
+            margin-top: 8px;
+            font-size: 14px;
+        }
+
+        .conversation-item .meta {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.1);
+        }
+
+        .tag.shivangi {
+            background: rgba(244, 114, 182, 0.2);
+            color: #f472b6;
+        }
+
+        .tag.quality-good {
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+        }
+
+        .tag.quality-tense {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        #transcript-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        #transcript-modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1a1a2e;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 800px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .close-btn:hover {
+            color: #fff;
+        }
+
+        .transcript-content {
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .refresh-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .refresh-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .shivangi-panel {
+            background: linear-gradient(135deg, rgba(244, 114, 182, 0.2) 0%, rgba(136, 58, 234, 0.2) 100%);
+            border-radius: 12px;
+            padding: 25px;
+        }
+
+        .shivangi-panel h3 {
+            color: #f472b6;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .heartbeat {
+            animation: heartbeat 1.5s ease-in-out infinite;
+        }
+
+        @keyframes heartbeat {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>
+                <span class="status-dot"></span>
+                Voice Journal
+            </h1>
+            <div>
+                <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
+            </div>
+        </header>
+
+        <div class="stats-grid" id="daily-stats">
+            <div class="stat-card">
+                <div class="label">Today's Conversations</div>
+                <div class="value" id="total-conv">0</div>
+            </div>
+            <div class="stat-card pink">
+                <div class="label">With Shivangi 💕</div>
+                <div class="value" id="with-shivangi">0</div>
+            </div>
+            <div class="stat-card blue">
+                <div class="label">Self Talk</div>
+                <div class="value" id="self-talk">0</div>
+            </div>
+            <div class="stat-card yellow">
+                <div class="label">Media Flagged</div>
+                <div class="value" id="media-flagged">0</div>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="shivangi-panel">
+                <h3><span class="heartbeat">💕</span> Shivangi Conversations</h3>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="label">This Month</div>
+                        <div class="value" id="shivangi-total">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Total Minutes</div>
+                        <div class="value" id="shivangi-minutes">0</div>
+                    </div>
+                </div>
+                <div class="stats-grid" style="margin-top: 15px;">
+                    <div class="stat-card quality-good">
+                        <div class="label">Good Moments 😊</div>
+                        <div class="value" id="shivangi-good">0</div>
+                    </div>
+                    <div class="stat-card quality-tense">
+                        <div class="label">Tense Moments 😔</div>
+                        <div class="value" id="shivangi-tense">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Weekly Activity</h2>
+                <canvas id="weekly-chart" height="200"></canvas>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Today's Conversations</h2>
+            <div class="conversation-list" id="conversation-list">
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="transcript-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Conversation</h3>
+                <button class="close-btn" onclick="closeModal()">×</button>
+            </div>
+            <div class="transcript-content" id="transcript-text"></div>
+        </div>
+    </div>
+
+    <script>
+        // Load dashboard data
+        async function loadDashboard() {
+            await Promise.all([
+                loadStats(),
+                loadConversations(),
+                loadShivangiStats(),
+                loadWeeklyChart()
+            ]);
+        }
+
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+
+                document.getElementById('total-conv').textContent = data.total_conversations || 0;
+                document.getElementById('with-shivangi').textContent = data.with_shivangi || 0;
+                document.getElementById('self-talk').textContent = data.self_talk || 0;
+                document.getElementById('media-flagged').textContent = data.media_flagged || 0;
+            } catch (e) {
+                console.error('Error loading stats:', e);
+            }
+        }
+
+        async function loadConversations() {
+            try {
+                const res = await fetch('/api/conversations');
+                const data = await res.json();
+
+                const container = document.getElementById('conversation-list');
+
+                if (data.length === 0) {
+                    container.innerHTML = '<div class="loading">No conversations today. Start speaking!</div>';
+                    return;
+                }
+
+                container.innerHTML = data.map(conv => `
+                    <div class="conversation-item" onclick="showConversation(${conv.conversation_id})">
+                        <div class="time">${conv.start_time} - ${conv.end_time} (${conv.duration_seconds}s)</div>
+                        <div class="summary">${conv.summary || 'No summary available'}</div>
+                        <div class="meta">
+                            ${conv.is_shivangi_conversation ? '<span class="tag shivangi">💕 Shivangi</span>' : ''}
+                            <span class="tag">${conv.source_type}</span>
+                            ${conv.quality !== 'not_applicable' ? `<span class="tag quality-${conv.quality}">${conv.quality}</span>` : ''}
+                            ${conv.languages.map(l => `<span class="tag">${l}</span>`).join('')}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Error loading conversations:', e);
+            }
+        }
+
+        async function loadShivangiStats() {
+            try {
+                const res = await fetch('/api/shivangi_stats?days=30');
+                const data = await res.json();
+
+                document.getElementById('shivangi-total').textContent = data.total_conversations || 0;
+                document.getElementById('shivangi-minutes').textContent = data.total_duration_minutes || 0;
+                document.getElementById('shivangi-good').textContent = data.good_count || 0;
+                document.getElementById('shivangi-tense').textContent = data.tense_count || 0;
+            } catch (e) {
+                console.error('Error loading Shivangi stats:', e);
+            }
+        }
+
+        async function loadWeeklyChart() {
+            try {
+                const res = await fetch('/api/weekly_summary');
+                const data = await res.json();
+
+                const canvas = document.getElementById('weekly-chart');
+                const ctx = canvas.getContext('2d');
+
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                if (data.length === 0) return;
+
+                const padding = 40;
+                const width = canvas.width - padding * 2;
+                const height = canvas.height - padding * 2;
+                const barWidth = width / data.length - 10;
+                const maxVal = Math.max(...data.map(d => d.total), 1);
+
+                ctx.fillStyle = '#4ade80';
+
+                data.forEach((d, i) => {
+                    const barHeight = (d.total / maxVal) * height;
+                    const x = padding + i * (barWidth + 10);
+                    const y = padding + height - barHeight;
+
+                    // Bar
+                    ctx.fillStyle = d.with_shivangi > 0 ? '#f472b6' : '#4ade80';
+                    ctx.fillRect(x, y, barWidth, barHeight);
+
+                    // Label
+                    ctx.fillStyle = '#888';
+                    ctx.font = '10px sans-serif';
+                    ctx.textAlign = 'center';
+                    const dateLabel = d.date.split('-').slice(1).join('/');
+                    ctx.fillText(dateLabel, x + barWidth/2, canvas.height - 10);
+                    ctx.fillText(d.total.toString(), x + barWidth/2, y - 5);
+                });
+            } catch (e) {
+                console.error('Error loading weekly chart:', e);
+            }
+        }
+
+        async function showConversation(id) {
+            try {
+                const res = await fetch(`/api/conversation/${id}`);
+                const data = await res.json();
+
+                document.getElementById('modal-title').textContent =
+                    `Conversation ${data.date} at ${data.start_time}`;
+
+                document.getElementById('transcript-text').textContent =
+                    data.transcript || 'No transcript available';
+
+                document.getElementById('transcript-modal').classList.add('active');
+            } catch (e) {
+                console.error('Error loading conversation:', e);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('transcript-modal').classList.remove('active');
+        }
+
+        // Close modal on escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Initial load
+        loadDashboard();
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadDashboard, 30000);
+    </script>
+</body>
+</html>
