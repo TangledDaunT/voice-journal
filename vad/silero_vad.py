@@ -62,8 +62,12 @@ class SileroVAD:
 
         # Load ONNX model
         opts = ort.SessionOptions()
-        opts.intra_num_threads = 1
-        opts.inter_op_num_threads = 1
+        # Use newer onnxruntime API
+        try:
+            opts.intra_num_threads = 1
+            opts.inter_op_num_threads = 1
+        except AttributeError:
+            pass  # Older/newer versions don't need these
         opts.log_verbosity_level = 3
 
         self.session = ort.InferenceSession(
