@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Models
+models/*.onnx
+models/*.pt
+models/*.bin
+
+# Audio files (keep calibration samples)
+# *.m4a
+# *.wav
+audio_clips/
+
+# Data
+data/
+*.db
+*.sqlite
+*.db-journal
+*.db-wal
+
+# Logs
+logs/
+*.log
+
+# Config secrets
+.env
+*.env
+secrets.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Obsidian vault (user-specific)
+obsidian_vault/
+
+# Mute flag
+mute_flag
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Voice profiles (user-specific calibration)
+config/voice_profiles.json
