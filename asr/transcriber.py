@@ -117,21 +117,37 @@ class ASRProcessor:
                 condition_on_previous_text=False,  # Each segment is independent
             )
 
+            # Check if segments is None or not iterable
+            if segments is None:
+                log_stage("ASR", f"No segments returned for segment {segment_id}")
+                return None
+
             # Collect transcript
             transcript_parts = []
             word_list = []
 
-            for seg in segments:
-                transcript_parts.append(seg.text)
+            # Convert generator to list to handle iteration safely
+            try:
+                segments_list = list(segments)
+            except TypeError:
+                # If it's not iterable, return None
+                log_stage("ASR", f"Segments not iterable for segment {segment_id}")
+                return None
+
+            for seg in segments_list:
+                if seg is None:
+                    continue
+                transcript_parts.append(seg.text if hasattr(seg, 'text') else '')
                 # Collect word-level info if available
-                if hasattr(seg, 'words'):
+                if hasattr(seg, 'words') and seg.words:
                     for word in seg.words:
-                        word_list.append({
-                            "word": word.word,
-                            "start": word.start,
-                            "end": word.end,
-                            "probability": word.probability
-                        })
+                        if word:
+                            word_list.append({
+                                "word": getattr(word, 'word', ''),
+                                "start": getattr(word, 'start', 0.0),
+                                "end": getattr(word, 'end', 0.0),
+                                "probability": getattr(word, 'probability', 1.0)
+                            })
 
             # Combine transcript
             text = " ".join(transcript_parts).strip()
