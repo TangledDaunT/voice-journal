@@ -472,3 +472,27 @@ MIT License - Use freely for personal projects.
 ---
 
 *Built with care for personal journaling.*
+
+---
+
+## Quick Start (Linux)
+
+```bash
+# 1. Clone repository
+git clone https://github.com/yourusername/voice-journal.git
+cd voice-journal
+
+# 2. Run setup
+./setup.sh
+
+# 3. Install Ollama and pull model
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull llama3.2:3b
+
+# 4. Calibrate voice profiles
+source venv/bin/activate
+python calibrate.py
+
+# 5. Start the daemon
+./vj-control.sh start
+```
