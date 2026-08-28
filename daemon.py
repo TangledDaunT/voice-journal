@@ -69,9 +69,11 @@ class VoiceJournalDaemon:
     def _init_stages(self):
         """Initialize all pipeline stages."""
         logger.info("Initializing pipeline stages...")
-
-        # Stage 1: Audio Capture
-        self.audio_capture = AudioCapture(self.config)
+        # Stage 1: Audio Capture - connected to audio_queue
+        self.audio_capture = AudioCapture(
+            self.config,
+            on_chunk=lambda chunk: self.audio_queue.put(chunk) if not self.is_paused else None
+        )
 
         # Stage 2: VAD
         self.vad_processor = VADProcessor(self.config)
