@@ -272,7 +272,7 @@ class VoiceJournalDaemon:
 
         audio_buffer = []
         buffer_duration = 0.0
-        buffer_max = 5.0  # Process every 5 seconds of audio
+        buffer_max = 600.0  # Process every 10 minutes of audio (was 5 seconds)
 
         while self.is_running and not self._shutdown_requested:
             try:
@@ -287,8 +287,14 @@ class VoiceJournalDaemon:
                 audio_buffer.append(chunk)
                 buffer_duration += chunk.duration
 
-                # Process when buffer is full
+                # Log progress every minute
+                if int(buffer_duration) % 60 == 0 and int(buffer_duration) > 0:
+                    minutes = int(buffer_duration) // 60
+                    logger.info(f"Buffering: {minutes}/10 minutes before processing...")
+
+                # Process when buffer is full (10 minutes)
                 if buffer_duration >= buffer_max:
+                    logger.info(f"Processing 10-minute segment ({buffer_duration:.1f}s of audio)...")
                     self._process_vad_buffer(audio_buffer)
                     audio_buffer = []
                     buffer_duration = 0.0
