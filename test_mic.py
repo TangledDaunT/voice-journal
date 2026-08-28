@@ -75,7 +75,9 @@ def test_mic_with_playback(input_device=None, output_device=None, duration=10, g
         duration: Test duration in seconds
         gain: Audio gain multiplier (default 1.0, increase if too quiet)
     """
-    sample_rate = 16000
+    # Use 48000 Hz as default (more compatible) or 44100 Hz
+    # Most devices support these sample rates
+    sample_rate = 48000  # Changed from 16000 to 48000 for compatibility
 
     print("\n" + "="*60)
     print("🎤 MICROPHONE TEST WITH LIVE PLAYBACK")
