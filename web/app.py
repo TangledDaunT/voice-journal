@@ -41,35 +41,45 @@ def index():
 @app.route('/api/stats')
 def get_stats():
     """Get daily statistics."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now().strftime("%Y-%m-%d")
 
-    # Today's stats
-    cursor.execute("""
-        SELECT
-            COUNT(*) as total,
-            SUM(CASE WHEN is_shivangi_conversation = 1 THEN 1 ELSE 0 END) as with_shivangi,
-            SUM(CASE WHEN source_type = 'self_talk' THEN 1 ELSE 0 END) as self_talk,
-            SUM(CASE WHEN source_type = 'media_or_unknown' THEN 1 ELSE 0 END) as media
-        FROM conversations
-        WHERE date = ?
-    """, (today,))
+        # Today's stats
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN is_shivangi_conversation = 1 THEN 1 ELSE 0 END) as with_shivangi,
+                SUM(CASE WHEN source_type = 'self_talk' THEN 1 ELSE 0 END) as self_talk,
+                SUM(CASE WHEN source_type = 'media_or_unknown' THEN 1 ELSE 0 END) as media
+            FROM conversations
+            WHERE date = ?
+        """, (today,))
 
-    row = cursor.fetchone()
+        row = cursor.fetchone()
 
-    stats = {
-        "date": today,
-        "total_conversations": row["total"] if row else 0,
-        "with_shivangi": row["with_shivangi"] if row else 0,
-        "self_talk": row["self_talk"] if row else 0,
-        "media_flagged": row["media"] if row else 0,
-        "last_updated": datetime.now().isoformat()
-    }
+        stats = {
+            "date": today,
+            "total_conversations": row["total"] if row and row["total"] else 0,
+            "with_shivangi": row["with_shivangi"] if row and row["with_shivangi"] else 0,
+            "self_talk": row["self_talk"] if row and row["self_talk"] else 0,
+            "media_flagged": row["media"] if row and row["media"] else 0,
+            "last_updated": datetime.now().isoformat(),
+            "status": "operational"
+        }
 
-    conn.close()
-    return jsonify(stats)
+        conn.close()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "total_conversations": 0,
+            "with_shivangi": 0,
+            "self_talk": 0,
+            "media_flagged": 0
+        })
 
 
 @app.route('/api/conversations')

@@ -158,17 +158,32 @@ class ASRProcessor:
 
             duration = len(audio) / 16000  # Assuming 16kHz
 
+            # Fix language detection - Whisper sometimes misidentifies Hindi as Russian
+            detected_lang = info.language
+            lang_prob = info.language_probability
+
+            # Hinglish/Hindi/English detection improvement
+            text_lower = text.lower()
+            hindi_chars = any('ऀ' <= c <= 'ॿ' for c in text)  # Devanagari range
+
+            if detected_lang == 'ru' and not any('Ѐ' <= c <= 'ӿ' for c in text):
+                # If detected as Russian but no Cyrillic characters, likely Hindi/Hinglish
+                if hindi_chars or any(word in text_lower for word in ['hai', 'ka', 'ki', 'se', 'mein', 'aur', 'kya', 'nahi', 'ho', 'ke', 'ko', 'bhi']):
+                    detected_lang = 'hi'  # Hindi/Hinglish
+                else:
+                    detected_lang = 'en'  # Default to English
+
             log_metric("ASR", "transcription_time", time.time() - start_time, "s")
             log_metric("ASR", "real_time_factor", (time.time() - start_time) / duration if duration > 0 else 0)
-            log_stage("ASR", f"[{info.language}] {text[:50]}...")
+            log_stage("ASR", f"[{detected_lang}] {text[:50]}...")
 
             return TranscriptSegment(
                 text=text,
                 start_time=datetime.now(),  # Will be replaced with actual segment time
                 end_time=datetime.now(),
                 duration_seconds=duration,
-                language=info.language,
-                language_probability=info.language_probability,
+                language=detected_lang,  # Use corrected language
+                language_probability=lang_prob,
                 speaker=speaker_match.speaker,
                 speaker_confidence=speaker_match.confidence,
                 words=word_list,
