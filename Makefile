@@ -1,41 +1,53 @@
-.PHONY: test install clean lint format
+.PHONY: help install test lint format clean status batch benchmark validate
+
+help:
+	@echo "Voice Journal - Available commands:"
+	@echo ""
+	@echo "  make install     Install dependencies"
+	@echo "  make test         Run all tests"
+	@echo "  make lint         Run linters"
+	@echo "  make format       Format code"
+	@echo "  make clean        Clean build artifacts"
+	@echo "  make status       Check system status"
+	@echo "  make batch        Run batch processor manually"
+	@echo "  make benchmark    Run benchmark on sample audio"
+	@echo "  make validate     Validate configuration"
+	@echo ""
 
 install:
-	python -m venv venv
-	source venv/bin/activate && pip install -r requirements.txt
-
-clean:
-	find . -type d -name "__pycache__" -exec rm -rf {} +
-	find . -type d -name "*.egg-info" -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
-
-lint:
-	ruff check .
-
-format:
-	black .
+	pip install -r requirements.txt
 
 test:
 	pytest tests/ -v
 
-run:
-	source venv/bin/activate && python -m voice_journal.daemon
+lint:
+	ruff check .
+	mypy .
 
-setup:
-	./setup.sh
+format:
+	ruff format .
+	ruff check --fix .
+
+clean:
+	rm -rf __pycache__ .pytest_cache .ruff_cache .mypy_cache
+	rm -rf *.egg-info build dist
+	find . -type d -name "__pycache__" -exec rm -rf {} +
 
 status:
-	./vj-control.sh status
+	python status.py
 
-mute:
-	./vj-control.sh mute
+batch:
+	python -m processing.batch_processor
 
-unmute:
-	./vj-control.sh unmute
+benchmark:
+	@echo "Usage: python benchmark_asr.py <audio_file>"
+	@echo "Example: python benchmark_asr.py test_audio.m4a"
 
-logs:
-	tail -f logs/voice_journal.log
+validate:
+	python scripts/validate_config.py
 
-download-model:
-	mkdir -p models
-	wget -O models/silero_vad.onnx https://github.com/snakers4/silero-vad/raw/master/files/silero_vad.onnx
+daemon:
+	python daemon_v2.py
+
+check_backlog:
+	python status.py --format json | jq '.backlog'
