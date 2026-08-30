@@ -45,17 +45,23 @@ class SpeakerConfig(BaseModel):
 
 
 class ASRConfig(BaseModel):
-    model_size: str = Field(default="small")
+    model_size: str = Field(default="large-v3")
     compute_type: str = Field(default="int8")
     device: str = Field(default="cpu")
     language: Optional[str] = None
     beam_size: int = Field(default=5, ge=1)
     vad_filter: bool = True
+    condition_on_previous_text: bool = False
+    initial_prompt: Optional[str] = None
+
+    # Confidence thresholds for gating
+    no_speech_prob_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    avg_logprob_threshold: float = Field(default=-1.0)
 
     @field_validator("model_size")
     @classmethod
     def validate_model_size(cls, v: str) -> str:
-        valid_sizes = ["tiny", "base", "small", "medium", "large-v3"]
+        valid_sizes = ["tiny", "base", "small", "medium", "large-v3", "large-v2", "distil-large-v3"]
         if v not in valid_sizes:
             raise ValueError(f"model_size must be one of {valid_sizes}")
         return v
@@ -67,6 +73,50 @@ class ASRConfig(BaseModel):
         if v not in valid_types:
             raise ValueError(f"compute_type must be one of {valid_types}")
         return v
+
+
+class SegmentMergingConfig(BaseModel):
+    """Configuration for merging VAD segments before transcription."""
+    merge_gap_seconds: float = Field(default=2.5, ge=0.0)
+    min_transcription_unit_seconds: float = Field(default=5.0, ge=1.0)
+    max_transcription_unit_seconds: float = Field(default=300.0, ge=10.0)
+
+
+class PreprocessingConfig(BaseModel):
+    """Configuration for audio preprocessing."""
+    enable_denoising: bool = True
+    denoising_method: str = Field(default="noisereduce")
+    gain_normalization: bool = True
+    target_db: float = Field(default=-20.0)
+
+
+class SchedulerConfig(BaseModel):
+    """Configuration for batch processing scheduler."""
+    cpu_idle_threshold: float = Field(default=30.0, ge=0.0, le=100.0)
+    min_idle_duration_seconds: int = Field(default=60, ge=10)
+    idle_check_interval: int = Field(default=30, ge=10)
+
+    # Guaranteed overnight window
+    guaranteed_window_enabled: bool = True
+    guaranteed_window_start_hour: int = Field(default=22, ge=0, le=23)
+    guaranteed_window_end_hour: int = Field(default=6, ge=0, le=23)
+
+    # Batch sizes (in hours of audio) - how much to process per invocation
+    # Daytime: small chunks so we back off if user returns
+    daytime_batch_hours: float = Field(default=0.5, ge=0.1, le=2.0)
+    # Overnight: larger chunks, full-CPU is fine when user is asleep
+    overnight_batch_hours: float = Field(default=2.0, ge=0.5, le=6.0)
+
+    # Fallback for backlog overflow
+    backlog_overflow_hours: float = Field(default=24.0, ge=1.0)
+    fallback_model: str = Field(default="distil-large-v3")
+    fallback_compute_type: str = Field(default="int8")
+
+
+class BacklogConfig(BaseModel):
+    """Configuration for backlog tracking."""
+    warn_on_growth: bool = True
+    max_staging_hours: int = Field(default=72, ge=24)
 
 
 class ConversationConfig(BaseModel):
@@ -116,11 +166,15 @@ class Config(BaseSettings):
     vad: VADConfig = Field(default_factory=VADConfig)
     speaker: SpeakerConfig = Field(default_factory=SpeakerConfig)
     asr: ASRConfig = Field(default_factory=ASRConfig)
+    segment_merging: SegmentMergingConfig = Field(default_factory=SegmentMergingConfig)
+    preprocessing: PreprocessingConfig = Field(default_factory=PreprocessingConfig)
     conversation: ConversationConfig = Field(default_factory=ConversationConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
+    scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    backlog: BacklogConfig = Field(default_factory=BacklogConfig)
     system: SystemConfig = Field(default_factory=SystemConfig)
 
     model_config = {"env_prefix": "VJ_"}
