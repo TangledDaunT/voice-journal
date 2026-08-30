@@ -150,6 +150,17 @@ class ObsidianWriter:
         conversation: ConversationUnit
     ) -> str:
         """Format the full markdown content for a conversation note."""
+        # Check for low confidence segments
+        has_low_confidence = any(
+            getattr(seg, 'low_confidence', False)
+            for seg in conversation.transcript_segments
+        )
+
+        # Add needs_review flag if any segment has low confidence
+        if has_low_confidence:
+            frontmatter["needs_review"] = True
+            frontmatter["tags"].append("needs-review")
+
         # Build YAML frontmatter
         yaml_fm = "---\n" + yaml.dump(frontmatter, default_flow_style=False, allow_unicode=True) + "---\n\n"
 
@@ -164,16 +175,31 @@ class ObsidianWriter:
         if classification.confidence_note:
             body_parts.append(f"> **Note:** {classification.confidence_note}\n")
 
-        # Transcript
+        # Confidence warning if any segments are flagged
+        if has_low_confidence:
+            body_parts.append("> ⚠️ **Low confidence segments detected.** ")
+            body_parts.append("Some transcript lines may need review. Flagged lines are marked with ⚠️\n")
+
+        # Transcript with confidence markers
         body_parts.append("## Transcript\n\n")
         body_parts.append("```transcript\n")
-        body_parts.append(conversation.full_transcript)
-        body_parts.append("\n```\n")
+
+        # Format each segment with confidence marker if needed
+        for seg in conversation.transcript_segments:
+            timestamp = seg.start_time.strftime("%H:%M:%S")
+            speaker = seg.speaker.capitalize()
+
+            # Check for low confidence marker
+            marker = " ⚠️" if getattr(seg, 'low_confidence', False) else ""
+
+            body_parts.append(f"[{timestamp}] {speaker}: {seg.text}{marker}\n")
+
+        body_parts.append("```\n")
 
         # Word count
         body_parts.append(f"\n---\n*{conversation.total_word_count} words, {int(conversation.duration_seconds)}s*")
 
-        return yaml_fm + "\n".join(body_parts)
+        return yaml_fm + "".join(body_parts)
 
     def _update_daily_note(
         self,
