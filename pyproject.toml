@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voice_journal"
-version = "1.0.0"
-description = "Local, always-on voice journal that logs to Obsidian"
+version = "2.0.0"
+description = "Local, always-on voice journal with batch processing architecture"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -40,6 +40,9 @@ dependencies = [
     "loguru>=0.7.2",
     "pynput>=1.7.6",
     "plyer>=2.1.0",
+    "noisereduce>=3.0.0",
+    "psutil>=5.9.0",
+    "resemblyzer>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -51,9 +54,11 @@ dev = [
 ]
 
 [project.scripts]
-voice-journal = "voice_journal.daemon:main"
-voice-journal-mute = "voice_journal.utils.mute:main"
-voice-journal-calibrate = "voice_journal.speaker_id.calibrate:main"
+voice-journal = "daemon_v2:main"
+voice-journal-mute = "utils.mute:main"
+voice-journal-status = "status:main"
+voice-journal-batch = "processing.batch_processor:run_batch_job"
+voice-journal-calibrate = "speaker_id.embedding_speaker_id:main"
 
 [project.urls]
 Homepage = "https://github.com/shreyansh/voice_journal"
@@ -65,10 +70,18 @@ include = ["*"]
 exclude = ["tests*", "test*", "*.test*"]
 
 [tool.black]
-line-length = 88
+line-length = 100
 target-version = ['py310', 'py311', 'py312']
 
 [tool.ruff]
-line-length = 88
-select = ["E", "F", "I", "W"]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
 ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
