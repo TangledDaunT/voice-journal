@@ -417,6 +417,163 @@ class SQLiteStore:
             return [row[0] for row in cursor.fetchall()]
 
 
+# Backlog tracking schema
+SCHEMA_BACKLOG = """
+CREATE TABLE IF NOT EXISTS backlog_tracking (
+    segment_id TEXT PRIMARY KEY,
+    duration_seconds REAL NOT NULL,
+    captured_at TEXT NOT NULL,
+    processed_at TEXT,
+    processing_attempts INTEGER DEFAULT 0,
+    last_error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_backlog_captured ON backlog_tracking(captured_at);
+CREATE INDEX IF NOT EXISTS idx_backlog_processed ON backlog_tracking(processed_at);
+"""
+
+# Backlog summary table
+SCHEMA_BACKLOG_SUMMARY = """
+CREATE TABLE IF NOT EXISTS backlog_summary (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    total_hours REAL DEFAULT 0,
+    segment_count INTEGER DEFAULT 0,
+    last_updated TEXT NOT NULL,
+    last_day_start_hours REAL DEFAULT 0,
+    growth_warning BOOLEAN DEFAULT 0
+);
+"""
+
+
+class BacklogTracker:
+    """
+    Tracks backlog depth and processing progress.
+    Raises warnings when backlog grows instead of shrinking.
+    """
+
+    def __init__(self, config: Config):
+        self.config = config
+        self.db_path = Path(config.database.path)
+
+        self._init_backlog_db()
+
+    def _init_backlog_db(self):
+        """Initialize backlog tables."""
+        conn = sqlite3.connect(self.db_path)
+        conn.executescript(SCHEMA_BACKLOG)
+        conn.executescript(SCHEMA_BACKLOG_SUMMARY)
+
+        # Ensure summary row exists
+        conn.execute("""
+            INSERT OR IGNORE INTO backlog_summary (id, last_updated)
+            VALUES (1, datetime('now'))
+        """)
+        conn.commit()
+        conn.close()
+
+    def add_segment(self, segment_id: str, duration_seconds: float):
+        """Add a segment to the backlog."""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("""
+            INSERT OR REPLACE INTO backlog_tracking
+            (segment_id, duration_seconds, captured_at, processing_attempts)
+            VALUES (?, ?, datetime('now'), 0)
+        """, (segment_id, duration_seconds))
+
+        # Update summary
+        self._update_summary(conn)
+
+        conn.commit()
+        conn.close()
+
+    def remove_segment(self, segment_id: str):
+        """Mark a segment as processed (remove from backlog)."""
+        conn = sqlite3.connect(self.db_path)
+
+        conn.execute("""
+            UPDATE backlog_tracking
+            SET processed_at = datetime('now')
+            WHERE segment_id = ?
+        """, (segment_id,))
+
+        # Update summary
+        self._update_summary(conn)
+
+        conn.commit()
+        conn.close()
+
+    def _update_summary(self, conn):
+        """Update backlog summary and check for growth."""
+        from datetime import datetime, timedelta
+
+        # Calculate current total
+        result = conn.execute("""
+            SELECT COALESCE(SUM(duration_seconds), 0) / 3600.0,
+                   COUNT(*)
+            FROM backlog_tracking
+            WHERE processed_at IS NULL
+        """).fetchone()
+
+        total_hours = result[0]
+        segment_count = result[1]
+
+        # Get previous day's hours
+        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        prev_result = conn.execute("""
+            SELECT total_hours
+            FROM backlog_summary
+        """).fetchone()
+
+        prev_hours = prev_result[0] if prev_result else 0
+
+        # Check for growth
+        growth_warning = False
+        if prev_hours > 0 and total_hours > prev_hours:
+            growth_warning = True
+            logger.warning(
+                f"Backlog growing: {total_hours:.1f}h (was {prev_hours:.1f}h yesterday)"
+            )
+
+        # Update summary
+        conn.execute("""
+            UPDATE backlog_summary SET
+                total_hours = ?,
+                segment_count = ?,
+                last_updated = datetime('now'),
+                growth_warning = ?
+            WHERE id = 1
+        """, (total_hours, segment_count, growth_warning))
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get current backlog status."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+
+        # Get summary
+        summary = conn.execute("""
+            SELECT * FROM backlog_summary WHERE id = 1
+        """).fetchone()
+
+        # Get oldest unprocessed segment
+        oldest = conn.execute("""
+            SELECT MIN(captured_at) as oldest
+            FROM backlog_tracking
+            WHERE processed_at IS NULL
+        """).fetchone()
+
+        conn.close()
+
+        return {
+            "total_hours": summary["total_hours"] if summary else 0,
+            "segment_count": summary["segment_count"] if summary else 0,
+            "last_updated": summary["last_updated"] if summary else None,
+            "growth_warning": bool(summary["growth_warning"]) if summary else False,
+            "oldest_segment": oldest["oldest"] if oldest and oldest["oldest"] else None,
+            "overflow_threshold": self.config.scheduler.backlog_overflow_hours,
+            "is_overflow": (summary["total_hours"] if summary else 0) >= self.config.scheduler.backlog_overflow_hours
+        }
+
+
 if __name__ == "__main__":
     # Quick test
     config = Config()
@@ -429,3 +586,8 @@ if __name__ == "__main__":
     # Get stats
     stats = store.get_stats(days=30)
     print(f"\nStats: {stats}")
+
+    # Test backlog tracker
+    backlog = BacklogTracker(config)
+    status = backlog.get_status()
+    print(f"\nBacklog status: {status}")
