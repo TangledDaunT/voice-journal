@@ -1,29 +1,23 @@
 [Unit]
-Description=Voice Journal Daemon
+Description=Voice Journal Daemon (Batch Mode)
 After=network.target sound.target
 
 [Service]
 Type=simple
-User=%u
-WorkingDirectory=%h/Documents/voice_journal
-Environment="PATH=/usr/bin:/bin"
-Environment="PYTHONUNBUFFERED=1"
-
-# Activate virtual environment and run
-ExecStart=/bin/bash -c 'source %h/Documents/voice_journal/venv/bin/activate && python -m voice_journal.daemon'
-
-# On failure, restart after 10 seconds
+User=%USER%
+WorkingDirectory=%INSTALL_DIR%
+ExecStart=%INSTALL_DIR%/venv/bin/python daemon_v2.py
 Restart=on-failure
 RestartSec=10
-
-# Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=voice-journal
 
-# Resource limits (optional)
-MemoryMax=2G
-CPUQuota=80%
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+
+# Resource limits
+MemoryMax=8G
+CPUQuota=200%
 
 [Install]
 WantedBy=default.target
