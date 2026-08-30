@@ -5,11 +5,12 @@ A fully local background daemon that continuously listens through your microphon
 **Key Features:**
 - **100% local** - No cloud APIs, no external network calls
 - **Hindi + English code-switching** support
-- **Speaker identification** for Shreyansh and Shivangi
+- **Speaker identification** for Shreyansh and Shivangi (embedding-based)
 - **Automatic conversation detection** and grouping
 - **LLM-powered classification** (good/neutral/tense quality)
 - **Structured Obsidian notes** with frontmatter
 - **SQLite FTS5 search index** for fast querying
+- **Batch processing** - Accuracy over speed, no real-time constraint
 
 ---
 
@@ -32,8 +33,8 @@ A fully local background daemon that continuously listens through your microphon
 ### System Requirements
 - **OS**: Ubuntu 24.04 (or similar Linux)
 - **CPU**: Intel i3 or equivalent (8th gen+ recommended)
-- **RAM**: 8GB minimum
-- **Storage**: ~5GB for models
+- **RAM**: 8GB minimum (16GB recommended for large-v3 model)
+- **Storage**: ~8GB for models
 - **GPU**: NOT required (CPU-only inference)
 
 ### Software Dependencies
@@ -71,9 +72,6 @@ ollama serve &
 
 # Pull the LLM model (CPU-optimized)
 ollama pull llama3.2:3b
-
-# Alternative: phi3:mini (faster, less accurate)
-# ollama pull phi3:mini
 ```
 
 ### 3. Clone and Setup Python Environment
@@ -81,8 +79,8 @@ ollama pull llama3.2:3b
 ```bash
 # Clone the repository
 cd ~/Documents
-git clone <repo-url> voice_journal
-cd voice_journal
+git clone https://github.com/TangledDaunT/voice-journal.git
+cd voice-journal
 
 # Create virtual environment
 python3 -m venv venv
@@ -104,6 +102,7 @@ wget -O models/silero_vad.onnx \
 mkdir -p config
 mkdir -p logs
 mkdir -p data
+mkdir -p audio_clips/staging
 mkdir -p obsidian_vault/VoiceJournal/{Daily,Conversations}
 ```
 
@@ -129,68 +128,64 @@ vad:
   max_segment_duration: 30.0  # Split long segments
 ```
 
-### Speaker Identification
+### Segment Merging (Fix 2)
 ```yaml
-speaker:
-  calibration_file: "./config/voice_profiles.json"
+segment_merging:
+  merge_gap_seconds: 2.5  # Merge segments separated by less than this
+  min_transcription_unit_seconds: 5.0  # Don't transcribe shorter units
+  max_transcription_unit_seconds: 300.0  # Split if longer than 5 minutes
 ```
 
-### ASR (Transcription)
+### ASR (Transcription) - Now batch-processed
 ```yaml
 asr:
-  model_size: "small"      # Options: tiny, base, small, medium
-  compute_type: "int8"     # CPU-optimized quantization
-  language: null           # Auto-detect (Hindi + English)
+  model_size: "large-v3"  # Accuracy over speed
+  compute_type: "int8"
+  language: null          # Auto-detect (Hindi + English)
+  vad_filter: true        # Trim silence before transcription
+  condition_on_previous_text: false  # Prevent hallucination cascade
+  beam_size: 5            # Full beam for accuracy
+  initial_prompt: "Shreyansh, Shivangi, conversation, journal"
+  
+  # Confidence thresholds for uncertain segments
+  no_speech_prob_threshold: 0.6
+  avg_logprob_threshold: -1.0
 ```
 
-### Conversation Grouping
+### Batch Processing Scheduler
 ```yaml
-conversation:
-  gap_seconds: 90          # Group segments within this gap
-  unknown_voice_ratio_threshold: 0.7  # Media detection threshold
-```
-
-### LLM Classification
-```yaml
-llm:
-  model: "llama3.2:3b"    # Change to "phi3:mini" for faster processing
-  timeout_seconds: 30
+scheduler:
+  cpu_idle_threshold: 30.0  # Percentage
+  guaranteed_window:
+    start_hour: 22  # 10 PM
+    end_hour: 6    # 6 AM
+  backlog_overflow_hours: 24.0  # Switch to faster model if exceeded
+  fallback_model: "distil-large-v3"
 ```
 
 ---
 
 ## Calibration
 
-Voice profiles must be calibrated before first use.
+### Speaker Identification (Embedding-based)
 
-### Quick Start (Using Existing Voice Memos)
-
-```bash
-# Run with auto-detected calibration files
-python calibrate.py --interactive
-```
-
-### Manual Calibration
-
-1. Record 30-60 seconds of your voice (Shreyansh)
-2. Record 30-60 seconds of Shivangi's voice
-3. Run calibration:
+Voice profiles must be calibrated before first use. The new system uses speaker embeddings (not pitch threshold).
 
 ```bash
-python calibrate.py \
+# Activate virtual environment
+source venv/bin/activate
+
+# Record 30-60 seconds of your voice (Shreyansh)
+# Record 30-60 seconds of Shivangi's voice
+
+# Run calibration
+python -m speaker_id.embedding_speaker_id \
     --shreyansh /path/to/your_voice.m4a \
     --shivangi /path/to/her_voice.m4a \
     --output config/voice_profiles.json
 ```
 
-### Calibration Output
-
-The script extracts:
-- **Pitch (F0)**: Mean and standard deviation in Hz
-- **Spectral Centroid**: Brightness measure in Hz
-- **MFCCs**: Mel-frequency cepstral coefficients
-
-A threshold of ±2 standard deviations is used for matching.
+The calibration extracts speaker embeddings using Resemblyzer or SpeechBrain, which are more robust than the old pitch-threshold method.
 
 ---
 
@@ -202,163 +197,209 @@ A threshold of ±2 standard deviations is used for matching.
 # Activate virtual environment
 source venv/bin/activate
 
-# Start daemon
-python -m voice_journal.daemon
+# Start daemon (batch mode)
+python daemon_v2.py
 
 # Or with custom config
-python -m voice_journal.daemon --config config/my_config.yaml
+python daemon_v2.py --config config/my_config.yaml
+```
+
+### Check Status
+
+```bash
+# Check backlog, processing status, and health
+python status.py
+
+# JSON format
+python status.py --format json
+```
+
+### Run Batch Job Manually
+
+```bash
+# Process all staged segments immediately
+python -m processing.batch_processor
+
+# Use fallback model (faster)
+python -m processing.batch_processor --fallback
 ```
 
 ### Mute Control
 
 ```bash
 # Mute
-python -m voice_journal.utils.mute mute
+python -m utils.mute mute
 
 # Unmute
-python -m voice_journal.utils.mute unmute
-
-# Toggle
-python -m voice_journal.utils.mute toggle
+python -m utils.mute unmute
 
 # Check status
-python -m voice_journal.utils.mute status
-```
-
-### Test Pipeline Stages
-
-```bash
-# Test full pipeline on audio file
-python test_pipeline.py audio_file.m4a
-
-# Test specific stage
-python test_pipeline.py --stage vad audio_file.m4a
-python test_pipeline.py --stage asr audio_file.m4a
-```
-
-### Query the Database
-
-```bash
-# Python REPL
-python -c "
-from voice_journal.storage import SQLiteStore
-from voice_journal.config.settings import Config
-
-store = SQLiteStore(Config())
-
-# Search conversations
-results = store.search_conversations('shivangi')
-
-# Get conversations by date
-results = store.get_by_date('2024-01-15')
-
-# Get tense conversations
-results = store.get_by_quality('tense')
-
-# Get stats
-stats = store.get_stats(days=7)
-print(stats)
-"
+python -m utils.mute status
 ```
 
 ---
 
 ## Architecture
 
-### Pipeline Stages
+### Batch Processing Pipeline (New)
+
+The system now processes audio in **batch mode** rather than real-time. This is a fundamental change from the original design.
 
 ```
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│   Stage 1    │───>│   Stage 2    │───>│   Stage 3    │
-│ Audio Capture│    │     VAD      │    │ Speaker ID   │
-│ sounddevice  │    │  Silero VAD  │    │ librosa F0   │
-└──────────────┘    └──────────────┘    └──────────────┘
-                                              │
-                                              v
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│   Stage 7    │<───│   Stage 6    │<───│   Stage 5    │
-│ Obsidian     │    │ LLM Class.   │    │ Conversation │
-│ Vault Notes  │    │   Ollama     │    │  Grouping    │
-└──────────────┘    └──────────────┘    └──────────────┘
-       │                                        │
-       v                                        v
-┌──────────────┐                       ┌──────────────┐
-│   Stage 8    │                       │   Stage 4    │
-│   SQLite     │                       │     ASR      │
-│ FTS5 Index   │                       │faster-whisper│
-└──────────────┘                       └──────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    REAL-TIME (LIGHTWEIGHT)                    │
+│                                                               │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    │
+│  │   Stage 1    │───>│   Stage 2    │───>│   Staging    │    │
+│  │ Audio Capture│    │     VAD      │    │   Queue      │    │
+│  │ sounddevice  │    │  Silero VAD  │    │ (disk + DB)  │    │
+│  └──────────────┘    └──────────────┘    └──────────────┘    │
+│                                                   │            │
+└──────────────────────────────────────────────────┼────────────┘
+                                                   │
+                                                   ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    BATCH PROCESSING                           │
+│              (Runs when CPU is idle / overnight)             │
+│                                                               │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    │
+│  │   Segment    │───>│ Preprocessing│───>│    ASR       │    │
+│  │   Merging    │    │   Denoise    │    │ large-v3     │    │
+│  │ (gap < 2.5s) │    │   Normalize  │    │ + confidence │    │
+│  └──────────────┘    └──────────────┘    └──────────────┘    │
+│                                                 │              │
+│                                                 ▼              │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    │
+│  │   Stage 7    │<───│   Stage 6    │<───│   Stage 5    │    │
+│  │ Obsidian     │    │ LLM Class.   │    │ Conversation │    │
+│  │ Vault Notes  │    │   Ollama     │    │  Grouping    │    │
+│  └──────────────┘    └──────────────┘    └──────────────┘    │
+│       │                                                        │
+│       ▼                                                        │
+│  ┌──────────────┐                       ┌──────────────┐      │
+│  │   Stage 8    │                       │   Stage 3    │      │
+│  │   SQLite     │                       │ Speaker ID   │      │
+│  │ FTS5 Index   │                       │ (Embeddings) │      │
+│  └──────────────┘                       └──────────────┘      │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+### Key Architecture Changes
+
+1. **Segments are merged BEFORE transcription** (Fix 2)
+   - Consecutive VAD segments separated by <2.5s are merged
+   - Minimum 5s transcription unit prevents hallucination on short clips
+   - This is critical for accuracy - Whisper hallucinates on short, isolated segments
+
+2. **Audio preprocessing** (Fix 5)
+   - Denoising applied before VAD and ASR
+   - Gain normalization for consistent loudness
+   - Reduces false VAD triggers and improves transcription
+
+3. **Confidence gating** (Fix 4)
+   - Every segment gets `no_speech_prob` and `avg_logprob`
+   - Uncertain segments are kept but flagged with ⚠️
+   - Notes with low-confidence segments get `needs_review: true` frontmatter
+
+4. **Embedding-based speaker ID** (Fix 6)
+   - Replaced fragile pitch-threshold method
+   - Uses resemblyzer or speechbrain for speaker embeddings
+   - Cosine similarity matching against reference embeddings
+
+5. **Idle-triggered scheduler** (Fix 8)
+   - Batch jobs run when CPU is idle (<30% usage)
+   - Guaranteed overnight window (10 PM - 6 AM)
+   - Adaptive fallback to distil-large-v3 when backlog overflows
 
 ### Data Flow
 
 1. **Audio Capture**: Continuous mic input → ring buffer
 2. **VAD**: Silero VAD detects speech segments
-3. **Speaker ID**: Pitch + spectral features match profiles
-4. **ASR**: faster-whisper transcribes with auto-language detection
-5. **Conversation**: Group segments within 90s gap
-6. **LLM**: Classify type, quality, summarize
-7. **Obsidian**: Write markdown notes with frontmatter
-8. **SQLite**: Store metadata + FTS5 for search
+3. **Staging**: Segments saved to disk, tracked in SQLite
+4. **Batch Job** (when scheduled):
+   - Merge segments (gap-based)
+   - Preprocess (denoise, normalize)
+   - Transcribe (large-v3 with anti-hallucination settings)
+   - Identify speakers (embeddings)
+   - Group into conversations (90s gap)
+   - Classify (LLM)
+   - Write to Obsidian + SQLite
 
 ---
 
 ## Performance
 
-### CPU Performance Expectations
+### Batch Processing Performance
 
 **Hardware**: Intel i3 (no GPU)
 
-| Model | Real-Time Factor* | Notes |
-|-------|------------------|-------|
-| faster-whisper `tiny` | 0.3-0.5x | Very fast, lower accuracy |
-| faster-whisper `base` | 0.5-0.7x | Good balance |
-| faster-whisper `small` (recommended) | 0.8-1.2x | Best for Hindi+English |
-| faster-whisper `medium` | 1.5-2.5x | Too slow for real-time |
+| Model | Real-Time Factor* | Quality | Notes |
+|-------|------------------|---------|-------|
+| faster-whisper `large-v3` | ~2.0-2.5x | Best | Accuracy over speed |
+| faster-whisper `distil-large-v3` | ~1.0-1.2x | Good | Fallback for overflow |
 
-**Real-Time Factor**: Audio duration / Processing time
-- **< 1.0**: Faster than real-time (can keep up)
-- **> 1.0**: Slower than real-time (will accumulate lag)
+**Real-Time Factor**: Processing time ÷ Audio duration
+- **< 1.0**: Faster than real-time
+- **~2.0**: Large-v3 on i3 (typical)
+- **Higher RTF = More accurate transcription**
 
-### Recommendations
+### Expected Daily Processing Time
 
-If `small` model is too slow:
-1. Switch to `base` model in config
-2. Reduce beam_size: 5 → 1
-3. Use `phi3:mini` instead of `llama3.2:3b`
+With **3-6 hours of actual speech per day**:
 
-If LLM classification is slow:
-```yaml
-llm:
-  model: "phi3:mini"  # Faster, less accurate
-  timeout_seconds: 15
+- **large-v3 (RTF ~2.0)**: 6-12 hours of processing time per day
+- **With overnight window (10 PM - 6 AM)**: 8 hours available
+- **If backlog grows**: Automatically switches to fallback model
+
+Run the benchmark on your hardware:
+```bash
+python benchmark_asr.py path/to/sample_audio.m4a
 ```
 
 ---
 
 ## Known Limitations
 
-### 1. Third-Party Voice Detection
-**Issue**: If a third person speaks, they'll be tagged as "unknown" and the conversation may be flagged as "media_or_unknown".
+### 1. Hallucination on Short/Silent Segments (FIXED)
 
-**Workaround**: This is a tradeoff. The system only knows Shreyansh and Shivangi's voices. Any other voice is treated as the system doesn't know who it is.
+**Previous Issue**: Whisper would hallucinate (invent text) on short, isolated, or near-silent segments. This is a known failure mode of chunked Whisper pipelines.
 
-### 2. Background Media Detection
-**Issue**: TV/music in background may trigger VAD and create noise transcripts.
+**Mitigations**:
+- Segments are now merged BEFORE transcription (minimum 5s units)
+- `vad_filter=true` trims silence before decoding
+- `condition_on_previous_text=false` prevents hallucination cascades
+- Uncertain segments are flagged with ⚠️ markers
+- Audio preprocessing (denoising) reduces silence/noise issues
 
-**Mitigation**:
+### 2. Third-Party Voice Detection
+
+**Issue**: If a third person speaks, they'll be tagged as "unknown".
+
+**Workaround**: This is a tradeoff. The system only knows registered voice profiles. Any other voice is treated as unknown.
+
+### 3. Background Media Detection
+
+**Issue**: TV/music in background may trigger VAD.
+
+**Mitigations**:
 - Adjust VAD threshold higher (0.6-0.7)
-- Adjust `unknown_voice_ratio_threshold`
+- Speaker ID helps filter unknown voices
 - Use mute control when watching media
 
-### 3. Accuracy
-- Silent segments may be missed
-- Fast speech may be cut off
-- Code-switching quality varies
+### 4. Code-Switching Accuracy
 
-### 4. Privacy Note
-- Audio is processed **fully locally**
-- No network calls for audio/transcript content
-- Model downloads only on first run (external network)
+**Issue**: Hindi-English mixed speech quality varies.
+
+**Mitigation**: `large-v3` model handles code-switching better than smaller models. Initial prompt biases toward common names/terms.
+
+### 5. Backlog Growth
+
+**Issue**: If daily speech exceeds overnight processing capacity, backlog grows.
+
+**Mitigations**:
+- `status.py` shows backlog depth and warns on growth
+- Adaptive fallback to faster model when backlog >24h
+- Run batch jobs manually if needed
 
 ---
 
@@ -387,39 +428,36 @@ python -c "import sounddevice as sd; print(sd.query_devices())"
 sudo usermod -a -G audio $USER
 ```
 
-### "Silero VAD model not found"
+### "Backlog growing" warning
 
 ```bash
-# Download model
-mkdir -p models
-wget -O models/silero_vad.onnx \
-    https://github.com/snakers4/silero-vad/raw/master/files/silero_vad.onnx
+# Check current status
+python status.py
+
+# Run batch job manually
+python -m processing.batch_processor
+
+# Use fallback model if behind
+python -m processing.batch_processor --fallback
 ```
 
-### Slow Performance
+### "resemblyzer not found"
 
 ```bash
-# Check CPU usage
-htop
+# Install speaker embedding library
+pip install resemblyzer
 
-# Reduce model size
-# In config/default_config.yaml:
-asr:
-  model_size: "base"  # Downgrade from "small"
-
-llm:
-  model: "phi3:mini"  # Faster LLM
+# Or use heavier alternative
+pip install speechbrain
 ```
 
-### Empty Transcripts
+### Low-confidence segments flagged
 
-```bash
-# Test VAD first
-python test_pipeline.py --stage vad audio.m4a
+This is expected behavior. The system is being honest about uncertainty:
 
-# Check audio quality
-ffprobe audio.m4a
-```
+- Review flagged segments in Obsidian (marked with ⚠️)
+- Check if audio quality can be improved
+- Consider re-processing with cleaner audio
 
 ---
 
@@ -427,20 +465,22 @@ ffprobe audio.m4a
 
 ```
 voice_journal/
-├── audio_capture/     # Stage 1: Mic capture
-├── vad/              # Stage 2: Silero VAD
-├── speaker_id/       # Stage 3: Voice profiling
-├── asr/              # Stage 4: faster-whisper
+├── audio_capture/     # Stage 1: Mic capture + preprocessing
+├── vad/              # Stage 2: Silero VAD + segment merging
+├── speaker_id/       # Stage 3: Embedding-based speaker ID
+├── asr/              # Stage 4: faster-whisper (batch mode)
 ├── conversation/     # Stage 5: Conversation grouping
 ├── llm_output/       # Stage 6: Ollama classification
 ├── obsidian/         # Stage 7: Markdown notes
-├── storage/          # Stage 8: SQLite + FTS5
+├── storage/          # Stage 8: SQLite + FTS5 + backlog tracking
+├── processing/       # Batch processor + scheduler
 ├── config/           # Configuration files
 ├── utils/            # Logging, mute control
 ├── tests/            # Unit tests
-├── daemon.py         # Main orchestrator
+├── daemon_v2.py      # Main daemon (batch mode)
+├── benchmark_asr.py  # Model benchmarking script
+├── status.py         # CLI status checker
 ├── calibrate.py      # Voice calibration CLI
-├── test_pipeline.py  # Pipeline tester
 └── README.md         # This file
 ```
 
@@ -467,32 +507,8 @@ MIT License - Use freely for personal projects.
 - **Silero VAD**: https://github.com/snakers4/silero-vad
 - **faster-whisper**: https://github.com/guillaumekln/faster-whisper
 - **Ollama**: https://ollama.ai
-- **librosa**: https://librosa.org
+- **Resemblyzer**: https://github.com/resemble-ai/Resemblyzer
 
 ---
 
-*Built with care for personal journaling.*
-
----
-
-## Quick Start (Linux)
-
-```bash
-# 1. Clone repository
-git clone https://github.com/yourusername/voice-journal.git
-cd voice-journal
-
-# 2. Run setup
-./setup.sh
-
-# 3. Install Ollama and pull model
-curl -fsSL https://ollama.ai/install.sh | sh
-ollama pull llama3.2:3b
-
-# 4. Calibrate voice profiles
-source venv/bin/activate
-python calibrate.py
-
-# 5. Start the daemon
-./vj-control.sh start
-```
+*Built with care for personal journaling. Accuracy over speed.*
