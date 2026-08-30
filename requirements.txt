@@ -13,6 +13,17 @@ faster-whisper>=1.0.0
 # Audio Feature Extraction
 librosa>=0.10.1
 
+# Audio Preprocessing (Fix 5)
+noisereduce>=3.0.0
+psutil>=5.9.0  # For CPU monitoring and idle detection
+
+# Speaker Identification (Fix 6)
+# Option 1: Lightweight (recommended)
+resemblyzer>=1.0.0
+
+# Option 2: More accurate but heavier
+# speechbrain>=0.5.16
+
 # LLM Integration
 requests>=2.31.0
 ollama>=0.1.0
@@ -26,6 +37,7 @@ python-slugify>=8.0.1
 
 # Configuration
 pydantic>=2.5.0
+pydantic-settings>=2.0.0
 
 # Logging & Monitoring
 loguru>=0.7.2
