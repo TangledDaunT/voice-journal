@@ -47,7 +47,7 @@ export function KeyboardShortcutsHelp() {
           <span>{s.description}</span>
           <kbd className="rounded bg-muted px-2 py-1 text-xs">
             {s.ctrl ? 'Ctrl+' : ''}
-            {s.meta ? '⌘+' : ''}
+            {s.meta ? 'Cmd+' : ''}
             {s.shift ? 'Shift+' : ''}
             {s.key}
           </kbd>
