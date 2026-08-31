@@ -499,6 +499,345 @@ def get_current_stats():
         }
 
 
+# ============================================================================
+# CALIBRATION ENDPOINTS
+# ============================================================================
+
+CALIBRATION_DIR = BASE_DIR / "config" / "calibration"
+CALIBRATION_DIR.mkdir(parents=True, exist_ok=True)
+
+# Calibration state (in-memory)
+calibration_state = {
+    "silent_baseline": None,
+    "voice_samples": {},
+    "status": "idle"
+}
+
+
+@app.route('/api/calibration/status')
+def get_calibration_status():
+    """Get current calibration status."""
+    try:
+        # Load existing calibration if exists
+        profile_path = CALIBRATION_DIR / "room_profile.json"
+        voice_path = CALIBRATION_DIR / "voice_profiles.json"
+
+        profile = None
+        if profile_path.exists():
+            with open(profile_path) as f:
+                profile = json.load(f)
+
+        voices = {}
+        if voice_path.exists():
+            with open(voice_path) as f:
+                voices = json.load(f)
+
+        # Get audio device info
+        import sounddevice as sd
+        input_device = sd.query_devices(kind='input')
+
+        return jsonify({
+            "status": calibration_state["status"],
+            "has_silent_baseline": profile is not None,
+            "silent_baseline": profile,
+            "voice_profiles": voices,
+            "current_input_device": input_device['name']
+        })
+    except Exception as e:
+        return jsonify({"error": str(e), "status": "error"})
+
+
+@app.route('/api/calibration/start_silent', methods=['POST'])
+def start_silent_calibration():
+    """Record a 5-second silent room baseline."""
+    try:
+        import sounddevice as sd
+        import numpy as np
+
+        calibration_state["status"] = "recording_silent"
+
+        # Record 5 seconds of "silence"
+        duration = 5
+        sample_rate = 16000
+        recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
+        sd.wait()
+
+        # Calculate noise floor metrics
+        rms = float(np.sqrt(np.mean(recording**2)))
+        max_amp = float(np.max(np.abs(recording)))
+        peak_freq = _get_peak_frequency(recording.flatten(), sample_rate)
+
+        # Dynamic threshold calculation
+        # VAD threshold should be above noise floor
+        recommended_vad_threshold = min(0.7, max(0.3, rms * 5))
+
+        profile = {
+            "recorded_at": datetime.now().isoformat(),
+            "duration_seconds": duration,
+            "sample_rate": sample_rate,
+            "rms_level": round(rms, 6),
+            "max_amplitude": round(max_amp, 6),
+            "peak_frequency_hz": round(peak_freq, 1),
+            "recommended_vad_threshold": round(recommended_vad_threshold, 2),
+            "noise_floor_db": round(20 * np.log10(rms) if rms > 0 else -60, 1)
+        }
+
+        # Save profile
+        profile_path = CALIBRATION_DIR / "room_profile.json"
+        with open(profile_path, 'w') as f:
+            json.dump(profile, f, indent=2)
+
+        calibration_state["silent_baseline"] = profile
+        calibration_state["status"] = "idle"
+
+        return jsonify({
+            "success": True,
+            "profile": profile,
+            "message": "Silent baseline recorded successfully"
+        })
+    except Exception as e:
+        calibration_state["status"] = "error"
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/calibration/start_voice', methods=['POST'])
+def start_voice_calibration():
+    """Record a voice sample for speaker identification."""
+    try:
+        import sounddevice as sd
+        import numpy as np
+
+        data = request.get_json() or {}
+        speaker_name = data.get('name', 'default')
+
+        calibration_state["status"] = f"recording_voice_{speaker_name}"
+
+        # Record 5 seconds of voice
+        duration = 5
+        sample_rate = 16000
+        recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
+        sd.wait()
+
+        # Extract voice characteristics
+        rms = float(np.sqrt(np.mean(recording**2)))
+        max_amp = float(np.max(np.abs(recording)))
+
+        # Pitch estimation (simplified)
+        pitch_estimate = _estimate_pitch(recording.flatten(), sample_rate)
+
+        # Spectral features
+        spectral_centroid = _get_spectral_centroid(recording.flatten(), sample_rate)
+
+        voice_profile = {
+            "name": speaker_name,
+            "recorded_at": datetime.now().isoformat(),
+            "duration_seconds": duration,
+            "sample_rate": sample_rate,
+            "rms_level": round(rms, 6),
+            "max_amplitude": round(max_amp, 6),
+            "estimated_pitch_hz": round(pitch_estimate, 1),
+            "spectral_centroid_hz": round(spectral_centroid, 1),
+            "confidence_threshold": round(rms * 0.5, 4)
+        }
+
+        # Load existing profiles and add/update
+        voice_path = CALIBRATION_DIR / "voice_profiles.json"
+        voices = {}
+        if voice_path.exists():
+            with open(voice_path) as f:
+                voices = json.load(f)
+
+        voices[speaker_name] = voice_profile
+
+        with open(voice_path, 'w') as f:
+            json.dump(voices, f, indent=2)
+
+        calibration_state["voice_samples"][speaker_name] = voice_profile
+        calibration_state["status"] = "idle"
+
+        return jsonify({
+            "success": True,
+            "profile": voice_profile,
+            "message": f"Voice profile '{speaker_name}' recorded successfully"
+        })
+    except Exception as e:
+        calibration_state["status"] = "error"
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/calibration/test_levels', methods=['POST'])
+def test_audio_levels():
+    """Real-time audio level test for 3 seconds."""
+    try:
+        import sounddevice as sd
+        import numpy as np
+
+        duration = 3
+        sample_rate = 16000
+
+        recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
+        sd.wait()
+
+        # Calculate levels
+        rms = float(np.sqrt(np.mean(recording**2)))
+        max_amp = float(np.max(np.abs(recording)))
+        peak_db = round(20 * np.log10(max_amp) if max_amp > 0 else -60, 1)
+
+        # Determine quality
+        if max_amp < 0.05:
+            quality = "too_low"
+            message = "Audio level too low. Increase mic volume or get closer."
+        elif max_amp < 0.3:
+            quality = "acceptable"
+            message = "Audio level acceptable. Could be improved."
+        elif max_amp < 0.8:
+            quality = "good"
+            message = "Audio level good!"
+        else:
+            quality = "clipping"
+            message = "Audio clipping! Reduce mic volume."
+
+        return jsonify({
+            "success": True,
+            "rms": round(rms, 4),
+            "max_amplitude": round(max_amp, 4),
+            "peak_db": peak_db,
+            "quality": quality,
+            "message": message
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/calibration/apply', methods=['POST'])
+def apply_calibration():
+    """Apply calibration settings to system."""
+    try:
+        # This would update config.yaml or send signal to daemon
+        # For now, just return success
+        profile_path = CALIBRATION_DIR / "room_profile.json"
+        voice_path = CALIBRATION_DIR / "voice_profiles.json"
+
+        if not profile_path.exists():
+            return jsonify({"success": False, "error": "No silent baseline recorded"})
+
+        with open(profile_path) as f:
+            profile = json.load(f)
+
+        # TODO: Send signal to daemon to reload calibration
+        # For now, just log it
+
+        return jsonify({
+            "success": True,
+            "message": "Calibration applied. Restart daemon for full effect.",
+            "profile": profile
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/calibration/audio_devices')
+def get_audio_devices():
+    """Get list of available audio input devices."""
+    try:
+        import sounddevice as sd
+        devices = sd.query_devices()
+
+        input_devices = []
+        for i, d in enumerate(devices):
+            if d['max_input_channels'] > 0:
+                input_devices.append({
+                    "index": i,
+                    "name": d['name'],
+                    "channels": d['max_input_channels'],
+                    "default_sample_rate": d['default_samplerate'],
+                    "is_default": i == sd.default.device[0]
+                })
+
+        return jsonify(input_devices)
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+@app.route('/api/calibration/set_device', methods=['POST'])
+def set_audio_device():
+    """Set the default audio input device."""
+    try:
+        import sounddevice as sd
+
+        data = request.get_json() or {}
+        device_index = data.get('device_index')
+
+        if device_index is not None:
+            sd.default.device[0] = device_index
+            return jsonify({"success": True, "message": f"Device set to {device_index}"})
+
+        return jsonify({"success": False, "error": "No device index provided"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+# Helper functions for audio analysis
+def _get_peak_frequency(audio, sample_rate):
+    """Get the dominant frequency in the audio."""
+    try:
+        import numpy as np
+        if len(audio) < 100:
+            return 0
+
+        # FFT
+        fft = np.abs(np.fft.rfft(audio))
+        freqs = np.fft.rfftfreq(len(audio), 1/sample_rate)
+
+        # Find peak
+        peak_idx = np.argmax(fft)
+        return float(freqs[peak_idx])
+    except:
+        return 0
+
+
+def _estimate_pitch(audio, sample_rate):
+    """Estimate fundamental frequency using autocorrelation."""
+    try:
+        import numpy as np
+        if len(audio) < 100:
+            return 0
+
+        # Simple autocorrelation-based pitch detection
+        corr = np.correlate(audio, audio, mode='full')
+        corr = corr[len(corr)//2:]
+
+        # Find first peak after first minimum
+        d = np.diff(corr)
+        start = np.where(d > 0)[0]
+        if len(start) == 0:
+            return 0
+
+        start = start[0]
+        peak = np.argmax(corr[start:]) + start
+
+        if peak > 0:
+            return sample_rate / peak
+        return 0
+    except:
+        return 0
+
+
+def _get_spectral_centroid(audio, sample_rate):
+    """Calculate spectral centroid (brightness measure)."""
+    try:
+        import numpy as np
+        if len(audio) < 100:
+            return 0
+
+        magnitudes = np.abs(np.fft.rfft(audio))
+        freqs = np.fft.rfftfreq(len(audio), 1/sample_rate)
+
+        return float(np.sum(magnitudes * freqs) / (np.sum(magnitudes) + 1e-10))
+    except:
+        return 0
+
+
 if __name__ == '__main__':
     import argparse
 

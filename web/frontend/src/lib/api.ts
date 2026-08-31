@@ -123,3 +123,33 @@ export function subscribeToLiveUpdates(
     eventSource.close()
   }
 }
+
+// Calibration API
+export const calibrationApi = {
+  getStatus: () => fetch(`${API_BASE}/calibration/status`).then(r => r.json()),
+
+  getAudioDevices: () => fetch(`${API_BASE}/calibration/audio_devices`).then(r => r.json()),
+
+  setAudioDevice: (deviceIndex: number) =>
+    fetch(`${API_BASE}/calibration/set_device`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_index: deviceIndex })
+    }).then(r => r.json()),
+
+  recordSilentBaseline: () =>
+    fetch(`${API_BASE}/calibration/start_silent`, { method: 'POST' }).then(r => r.json()),
+
+  recordVoiceSample: (name: string) =>
+    fetch(`${API_BASE}/calibration/start_voice`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    }).then(r => r.json()),
+
+  testLevels: () =>
+    fetch(`${API_BASE}/calibration/test_levels`, { method: 'POST' }).then(r => r.json()),
+
+  apply: () =>
+    fetch(`${API_BASE}/calibration/apply`, { method: 'POST' }).then(r => r.json()),
+}

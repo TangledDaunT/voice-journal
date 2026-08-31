@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Dashboard } from '@/pages/Dashboard'
 import { Conversations } from '@/pages/Conversations'
 import { Settings } from '@/pages/Settings'
+import Calibration from '@/pages/Calibration'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
@@ -26,6 +27,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/conversations" element={<Conversations />} />
               <Route path="/conversations/:id" element={<Conversations />} />
+              <Route path="/calibration" element={<Calibration />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </PageLayout>
