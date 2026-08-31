@@ -4,6 +4,7 @@ import { Dashboard } from '@/pages/Dashboard'
 import { Conversations } from '@/pages/Conversations'
 import { Settings } from '@/pages/Settings'
 import Calibration from '@/pages/Calibration'
+import AudioTestPage from '@/pages/AudioTest'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
@@ -28,6 +29,7 @@ function App() {
               <Route path="/conversations" element={<Conversations />} />
               <Route path="/conversations/:id" element={<Conversations />} />
               <Route path="/calibration" element={<Calibration />} />
+              <Route path="/audio-test" element={<AudioTestPage />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </PageLayout>

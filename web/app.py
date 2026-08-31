@@ -83,6 +83,15 @@ def serve_settings():
     return render_template('index.html')
 
 
+@app.route('/audio-test')
+def serve_audio_test():
+    """Serve React app for audio test route."""
+    dist_path = BASE_DIR / "web" / "dist" / "index.html"
+    if dist_path.exists():
+        return send_from_directory(BASE_DIR / "web" / "dist", "index.html")
+    return render_template('index.html')
+
+
 @app.route('/<path:path>')
 def serve_frontend(path):
     """Serve static files or fall back to index.html for SPA routing."""
@@ -802,6 +811,276 @@ def set_audio_device():
         if device_index is not None:
             sd.default.device[0] = device_index
             return jsonify({"success": True, "message": f"Device set to {device_index}"})
+
+        return jsonify({"success": False, "error": "No device index provided"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+# ============================================================================
+# AUDIO TEST AND TALKBACK ENDPOINTS
+# ============================================================================
+
+AUDIO_TEST_DIR = BASE_DIR / "audio_test"
+AUDIO_TEST_DIR.mkdir(parents=True, exist_ok=True)
+
+# Talkback state
+talkback_stream = None
+talkback_active = False
+
+
+@app.route('/api/audio/record_test', methods=['POST'])
+def record_audio_test():
+    """Record a test audio sample and return it for playback."""
+    try:
+        import sounddevice as sd
+        import numpy as np
+        import wave
+        import uuid
+
+        data = request.get_json() or {}
+        duration = data.get('duration', 5)  # seconds
+        sample_rate = data.get('sample_rate', 16000)
+
+        # Record audio
+        recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
+        sd.wait()
+
+        # Save to WAV file
+        filename = f"test_{uuid.uuid4().hex[:8]}.wav"
+        filepath = AUDIO_TEST_DIR / filename
+
+        with wave.open(str(filepath), 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)  # 16-bit
+            wf.setframerate(sample_rate)
+            wf.writeframes((recording * 32767).astype(np.int16).tobytes())
+
+        # Calculate audio stats
+        max_amp = float(np.max(np.abs(recording)))
+        rms = float(np.sqrt(np.mean(recording**2)))
+
+        return jsonify({
+            "success": True,
+            "filename": filename,
+            "url": f"/api/audio/play_test/{filename}",
+            "duration_seconds": duration,
+            "sample_rate": sample_rate,
+            "max_amplitude": round(max_amp, 4),
+            "rms": round(rms, 4),
+            "peak_db": round(20 * np.log10(max_amp) if max_amp > 0 else -60, 1)
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/audio/play_test/<filename>')
+def play_audio_test(filename):
+    """Serve recorded test audio file."""
+    try:
+        filepath = AUDIO_TEST_DIR / filename
+        if not filepath.exists():
+            return jsonify({"error": "File not found"}), 404
+
+        return send_from_directory(AUDIO_TEST_DIR, filename, mimetype='audio/wav')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/audio/test_files')
+def list_test_files():
+    """List all test audio files."""
+    try:
+        files = []
+        for f in AUDIO_TEST_DIR.glob("*.wav"):
+            stat = f.stat()
+            files.append({
+                "filename": f.name,
+                "url": f"/api/audio/play_test/{f.name}",
+                "size_bytes": stat.st_size,
+                "created": datetime.fromtimestamp(stat.st_ctime).isoformat()
+            })
+        return jsonify({"files": sorted(files, key=lambda x: x['created'], reverse=True)})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+@app.route('/api/audio/delete_test/<filename>', methods=['DELETE'])
+def delete_audio_test(filename):
+    """Delete a test audio file."""
+    try:
+        filepath = AUDIO_TEST_DIR / filename
+        if filepath.exists():
+            filepath.unlink()
+            return jsonify({"success": True})
+        return jsonify({"success": False, "error": "File not found"}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+# ============================================================================
+# TALKBACK - Real-time audio streaming
+# ============================================================================
+
+talkback_connections = set()
+talkback_output_stream = None
+
+
+@app.route('/api/talkback/start', methods=['POST'])
+def start_talkback():
+    """Initialize talkback mode - HP will play audio from remote mic."""
+    global talkback_output_stream, talkback_active
+
+    try:
+        import sounddevice as sd
+
+        if talkback_active:
+            return jsonify({"success": True, "message": "Talkback already active"})
+
+        # Initialize output stream (HP speaker)
+        talkback_output_stream = sd.OutputStream(
+            samplerate=16000,
+            channels=1,
+            dtype='float32'
+        )
+        talkback_output_stream.start()
+        talkback_active = True
+
+        return jsonify({
+            "success": True,
+            "message": "Talkback started - HP speaker ready",
+            "sample_rate": 16000
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/talkback/stop', methods=['POST'])
+def stop_talkback():
+    """Stop talkback mode."""
+    global talkback_output_stream, talkback_active
+
+    try:
+        talkback_active = False
+        if talkback_output_stream:
+            talkback_output_stream.stop()
+            talkback_output_stream.close()
+            talkback_output_stream = None
+
+        return jsonify({"success": True, "message": "Talkback stopped"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/talkback/status')
+def talkback_status():
+    """Get talkback status."""
+    return jsonify({
+        "active": talkback_active,
+        "output_stream_ready": talkback_output_stream is not None
+    })
+
+
+@app.route('/api/talkback/stream', methods=['POST'])
+def talkback_stream():
+    """Receive audio chunk and play it immediately on HP speaker."""
+    global talkback_output_stream, talkback_active
+
+    try:
+        import numpy as np
+
+        if not talkback_active or talkback_output_stream is None:
+            return jsonify({"success": False, "error": "Talkback not started"}), 400
+
+        # Get audio data from request
+        audio_data = request.get_data()
+
+        if not audio_data:
+            return jsonify({"success": False, "error": "No audio data"}), 400
+
+        # Convert bytes to float32 numpy array
+        # Assume 16-bit PCM input
+        audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32767.0
+
+        # Play immediately
+        talkback_output_stream.write(audio_array)
+
+        return jsonify({"success": True, "samples_received": len(audio_array)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/talkback/ws')
+def talkback_websocket():
+    """WebSocket endpoint for real-time talkback (alternative to HTTP streaming)."""
+    # Note: Flask doesn't natively support WebSockets well
+    # This is a placeholder - for production use Flask-SocketIO or FastAPI
+    return jsonify({"error": "Use HTTP POST to /api/talkback/stream instead"}), 400
+
+
+@app.route('/api/audio/speaker_test', methods=['POST'])
+def speaker_test():
+    """Play a test tone on the HP speaker to verify output works."""
+    try:
+        import sounddevice as sd
+        import numpy as np
+
+        data = request.get_json() or {}
+        duration = data.get('duration', 2)  # seconds
+        frequency = data.get('frequency', 440)  # Hz (A4 note)
+
+        sample_rate = 44100
+        t = np.linspace(0, duration, int(sample_rate * duration), False)
+        tone = np.sin(frequency * 2 * np.pi * t) * 0.5  # 50% volume
+
+        sd.play(tone, sample_rate)
+        sd.wait()
+
+        return jsonify({
+            "success": True,
+            "message": f"Played {frequency}Hz tone for {duration}s",
+            "frequency": frequency,
+            "duration": duration
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/audio/output_devices')
+def get_output_devices():
+    """Get list of available audio output devices."""
+    try:
+        import sounddevice as sd
+        devices = sd.query_devices()
+
+        output_devices = []
+        for i, d in enumerate(devices):
+            if d['max_output_channels'] > 0:
+                output_devices.append({
+                    "index": i,
+                    "name": d['name'],
+                    "channels": d['max_output_channels'],
+                    "default_sample_rate": d['default_samplerate'],
+                    "is_default": i == sd.default.device[1]
+                })
+
+        return jsonify(output_devices)
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+@app.route('/api/audio/set_output_device', methods=['POST'])
+def set_output_device():
+    """Set the default audio output device."""
+    try:
+        import sounddevice as sd
+
+        data = request.get_json() or {}
+        device_index = data.get('device_index')
+
+        if device_index is not None:
+            sd.default.device[1] = device_index
+            return jsonify({"success": True, "message": f"Output device set to {device_index}"})
 
         return jsonify({"success": False, "error": "No device index provided"})
     except Exception as e:

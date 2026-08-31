@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Home, BookOpen, Settings, ChevronLeft, ChevronRight, Mic, Sliders } from 'lucide-react'
+import { Home, BookOpen, Settings, ChevronLeft, ChevronRight, Mic, Sliders, Radio } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
@@ -12,6 +12,7 @@ const navItems = [
   { path: '/', label: 'Dashboard', icon: Home },
   { path: '/conversations', label: 'Journal', icon: BookOpen },
   { path: '/calibration', label: 'Calibration', icon: Sliders },
+  { path: '/audio-test', label: 'Audio Test', icon: Radio },
   { path: '/settings', label: 'Settings', icon: Settings },
 ]
 
