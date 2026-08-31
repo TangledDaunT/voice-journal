@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Home, BookOpen, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Header } from './Header'
 import { Sidebar } from './Sidebar'
@@ -11,12 +10,6 @@ import { Footer } from './Footer'
 interface PageLayoutProps {
   children: React.ReactNode
 }
-
-const navItems = [
-  { path: '/', label: 'Dashboard', icon: Home },
-  { path: '/conversations', label: 'Journal', icon: BookOpen },
-  { path: '/settings', label: 'Settings', icon: Settings },
-]
 
 export function PageLayout({ children }: PageLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true)

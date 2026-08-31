@@ -23,7 +23,7 @@ export function BacklogInfo() {
 
   const isHealthy = backlog && backlog.segments_pending < 100
   const isWarning = backlog && backlog.segments_pending >= 100 && backlog.segments_pending < 500
-  const isError = backlog && backlog.segments_pending >= 500
+  // isError is used for future error handling when backlog overflows
 
   const statusColor = isHealthy ? 'border-accent' : isWarning ? 'border-secondary' : 'border-destructive'
   const StatusIcon = isHealthy ? CheckCircle : isWarning ? Clock : AlertCircle

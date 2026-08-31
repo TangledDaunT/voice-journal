@@ -7,14 +7,12 @@ type ConnectionStatus = 'connected' | 'reconnecting' | 'disconnected'
 
 export function LiveStatus() {
   const [status, setStatus] = useState<ConnectionStatus>('connected')
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
   useEffect(() => {
     const unsubscribe = subscribeToLiveUpdates(
       (data) => {
         if (data.type === 'heartbeat' || data.type === 'connected') {
           setStatus('connected')
-          setLastUpdate(new Date())
         }
       },
       () => {

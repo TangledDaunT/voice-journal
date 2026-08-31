@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Play, Clock, Users } from 'lucide-react'
+import { Clock, Users } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Conversation } from '@/lib/api'
