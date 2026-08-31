@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 253 248 243;
+    --foreground: 61 41 20;
+
+    --card: 255 255 255;
+    --card-foreground: 61 41 20;
+
+    --popover: 255 255 255;
+    --popover-foreground: 61 41 20;
+
+    --primary: 139 115 85;
+    --primary-foreground: 253 248 243;
+
+    --secondary: 205 133 63;
+    --secondary-foreground: 253 248 243;
+
+    --accent: 85 107 47;
+    --accent-foreground: 253 248 243;
+
+    --muted: 158 139 122;
+    --muted-foreground: 107 90 69;
+
+    --destructive: 196 65 61;
+    --destructive-foreground: 253 248 243;
+
+    --border: 212 196 181;
+    --input: 245 240 235;
+    --ring: 139 115 85;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 42 30 18;
+    --foreground: 253 248 243;
+
+    --card: 61 41 20;
+    --card-foreground: 253 248 243;
+
+    --popover: 61 41 20;
+    --popover-foreground: 253 248 243;
+
+    --primary: 184 160 133;
+    --primary-foreground: 42 30 18;
+
+    --secondary: 224 152 55;
+    --secondary-foreground: 42 30 18;
+
+    --accent: 180 192 141;
+    --accent-foreground: 42 30 18;
+
+    --muted: 85 74 65;
+    --muted-foreground: 212 196 181;
+
+    --destructive: 244 100 95;
+    --destructive-foreground: 253 248 243;
+
+    --border: 107 90 69;
+    --input: 61 41 20;
+    --ring: 184 160 133;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Merriweather', Georgia, serif;
+  }
+}
+
+@layer components {
+  .font-display {
+    font-family: 'Merriweather', Georgia, serif;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
