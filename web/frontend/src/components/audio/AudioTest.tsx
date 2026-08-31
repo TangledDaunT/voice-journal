@@ -135,6 +135,11 @@ export function AudioTest() {
     try {
       setTalkbackConnecting(true);
 
+      // Check if getUserMedia is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Microphone access requires HTTPS or localhost. Please use http://localhost:5000 instead of the IP address, or enable HTTPS.');
+      }
+
       // 1. Start talkback on server
       const res = await fetch(`${API_BASE}/talkback/start`, { method: 'POST' });
       const data = await res.json();
