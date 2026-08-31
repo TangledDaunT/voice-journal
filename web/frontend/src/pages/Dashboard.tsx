@@ -1,11 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchStats, fetchConversations, fetchWeeklySummary, fetchShivangiStats } from '@/lib/api'
+import { fetchConversations, fetchWeeklySummary, fetchShivangiStats, fetchStats } from '@/lib/api'
+import { useLiveUpdates } from '@/hooks/useLiveUpdates'
 import { StatsGrid } from '@/components/dashboard/StatsGrid'
 import { WeeklyChart } from '@/components/dashboard/WeeklyChart'
 import { ShivangiPanel } from '@/components/dashboard/ShivangiPanel'
 import { RecentConversations } from '@/components/dashboard/RecentConversations'
+import { BacklogInfo } from '@/components/dashboard/BacklogInfo'
 
 export function Dashboard() {
+  // Enable live updates
+  useLiveUpdates()
+
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: fetchStats, refetchInterval: 30000 })
   const { data: conversations, isLoading: convLoading } = useQuery({
     queryKey: ['conversations'],
@@ -19,6 +24,9 @@ export function Dashboard() {
     <div className="space-y-6">
       {/* Stats Grid */}
       <StatsGrid stats={stats ?? null} />
+
+      {/* Backlog Status */}
+      <BacklogInfo />
 
       {/* Two Column Layout */}
       <div className="grid gap-6 lg:grid-cols-2">
