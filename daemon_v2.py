@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional
 import queue
 import os
+import numpy as np
 
 from config.settings import Config
 from audio_capture.capture import AudioCapture
