@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion'
-import { User as UserIcon } from 'lucide-react'
 
 interface UserAvatarProps {
   name: string

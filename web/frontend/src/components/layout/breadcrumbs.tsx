@@ -1,6 +1,5 @@
 import { FileCode2, Settings2, Home, BookOpen } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
-import { cn } from '@/lib/utils'
 
 const routeLabels: Record<string, string> = {
   '/': 'Dashboard',
