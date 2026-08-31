@@ -94,6 +94,12 @@ export async function fetchBacklog(): Promise<BacklogStatus> {
   return res.json()
 }
 
+export async function fetchQualityDistribution(): Promise<{ quality: string; count: number }[]> {
+  const res = await fetch(`${API_BASE}/quality_distribution`)
+  if (!res.ok) throw new Error('Failed to fetch quality distribution')
+  return res.json()
+}
+
 export function subscribeToLiveUpdates(
   onMessage: (data: { type: string; conversation?: Conversation; stats?: Partial<Stats> }) => void,
   onError?: (error: Error) => void
