@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { subscribeToLiveUpdates } from '@/lib/api'
 import { useQueryClient } from '@tanstack/react-query'
-import { Conversation, Stats } from '@/lib/api'
 
 type LiveStatus = 'connected' | 'reconnecting' | 'disconnected'
 
