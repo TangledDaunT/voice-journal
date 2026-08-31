@@ -18,7 +18,7 @@ from pathlib import Path
 import sqlite3
 import subprocess
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='dist', static_url_path='')
 CORS(app)
 
 # Configuration
@@ -45,7 +45,24 @@ def get_db_connection():
 
 @app.route('/')
 def index():
-    """Main dashboard page."""
+    """Main dashboard page - serve React app."""
+    dist_path = BASE_DIR / "web" / "dist" / "index.html"
+    if dist_path.exists():
+        return send_from_directory(BASE_DIR / "web" / "dist", "index.html")
+    return render_template('index.html')
+
+
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serve React app for all routes."""
+    # Try to serve static file first
+    static_path = BASE_DIR / "web" / "dist" / path
+    if static_path.exists():
+        return send_from_directory(BASE_DIR / "web" / "dist", path)
+    # Fall back to index.html for SPA routing
+    dist_path = BASE_DIR / "web" / "dist" / "index.html"
+    if dist_path.exists():
+        return send_from_directory(BASE_DIR / "web" / "dist", "index.html")
     return render_template('index.html')
 
 
@@ -301,6 +318,37 @@ def shivangi_stats():
         "good_count": row["good_count"] if row else 0,
         "tense_count": row["tense_count"] if row else 0
     })
+
+
+@app.route('/api/backlog')
+def get_backlog():
+    """Get current batch processing backlog status."""
+    try:
+        # Check staging queue
+        staging_path = BASE_DIR / "audio_clips" / "staging"
+        staging_count = len(list(staging_path.glob("*.json"))) if staging_path.exists() else 0
+
+        # Check backlog directory
+        backlog_path = BASE_DIR / "backlog"
+        backlog_count = len(list(backlog_path.glob("*.json"))) if backlog_path.exists() else 0
+
+        # Estimate hours (assuming avg 30s per segment)
+        total_segments = staging_count + backlog_count
+        hours_queued = round(total_segments * 30 / 3600, 2)
+
+        return jsonify({
+            "total_queued_hours": hours_queued,
+            "segments_pending": total_segments,
+            "staging_segments": staging_count,
+            "backlog_segments": backlog_count,
+            "overflow_threshold": 24.0
+        })
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "total_queued_hours": 0,
+            "segments_pending": 0
+        })
 
 
 # Serve Obsidian notes
