@@ -52,18 +52,49 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/<path:path>')
-def serve_frontend(path):
-    """Serve React app for all routes."""
-    # Try to serve static file first
-    static_path = BASE_DIR / "web" / "dist" / path
-    if static_path.exists():
-        return send_from_directory(BASE_DIR / "web" / "dist", path)
-    # Fall back to index.html for SPA routing
+# SPA routes - must serve index.html for client-side routing
+SPA_ROUTES = ['/dashboard', '/conversations', '/calibration', '/settings']
+
+@app.route('/conversations/<int:id>')
+@app.route('/conversations')
+def serve_conversations(id=None):
+    """Serve React app for conversations route."""
     dist_path = BASE_DIR / "web" / "dist" / "index.html"
     if dist_path.exists():
         return send_from_directory(BASE_DIR / "web" / "dist", "index.html")
     return render_template('index.html')
+
+
+@app.route('/calibration')
+def serve_calibration():
+    """Serve React app for calibration route."""
+    dist_path = BASE_DIR / "web" / "dist" / "index.html"
+    if dist_path.exists():
+        return send_from_directory(BASE_DIR / "web" / "dist", "index.html")
+    return render_template('index.html')
+
+
+@app.route('/settings')
+def serve_settings():
+    """Serve React app for settings route."""
+    dist_path = BASE_DIR / "web" / "dist" / "index.html"
+    if dist_path.exists():
+        return send_from_directory(BASE_DIR / "web" / "dist", "index.html")
+    return render_template('index.html')
+
+
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serve static files or fall back to index.html for SPA routing."""
+    # Only serve actual files from dist, not routes
+    static_path = BASE_DIR / "web" / "dist" / path
+    if static_path.exists() and static_path.is_file():
+        return send_from_directory(BASE_DIR / "web" / "dist", path)
+    # For any other path, serve index.html (SPA fallback)
+    dist_path = BASE_DIR / "web" / "dist" / "index.html"
+    if dist_path.exists():
+        return send_from_directory(BASE_DIR / "web" / "dist", "index.html")
+    return "Not Found", 404
 
 
 @app.route('/api/stats')
