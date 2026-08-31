@@ -75,9 +75,9 @@ export default function Calibration() {
 
       // Get audio devices
       const devicesRes = await calibrationApi.getAudioDevices();
-      if (devicesRes.data) {
-        setDevices(devicesRes.data);
-        const defaultDevice = devicesRes.data.find((d: AudioDevice) => d.is_default);
+      if (Array.isArray(devicesRes)) {
+        setDevices(devicesRes);
+        const defaultDevice = devicesRes.find((d: AudioDevice) => d.is_default);
         if (defaultDevice) {
           setSelectedDevice(defaultDevice.index);
         }
@@ -85,13 +85,13 @@ export default function Calibration() {
 
       // Get current calibration status
       const statusRes = await calibrationApi.getStatus();
-      if (statusRes.data) {
-        setStatus(statusRes.data.status);
-        if (statusRes.data.silent_baseline) {
-          setSilentProfile(statusRes.data.silent_baseline);
+      if (statusRes) {
+        setStatus(statusRes.status || 'idle');
+        if (statusRes.silent_baseline) {
+          setSilentProfile(statusRes.silent_baseline);
         }
-        if (statusRes.data.voice_profiles) {
-          setVoiceProfiles(statusRes.data.voice_profiles);
+        if (statusRes.voice_profiles) {
+          setVoiceProfiles(statusRes.voice_profiles);
         }
       }
     } catch (err) {
@@ -109,14 +109,14 @@ export default function Calibration() {
 
       const res = await calibrationApi.recordSilentBaseline();
 
-      if (res.data?.success) {
-        setSilentProfile(res.data.profile);
+      if (res.success) {
+        setSilentProfile(res.profile);
         setStatus('idle');
       } else {
-        setError(res.data?.error || 'Failed to record silent baseline');
+        setError(res.error || 'Failed to record silent baseline');
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Recording failed');
+      setError(err.message || 'Recording failed');
     } finally {
       setIsRecording(false);
       setStatus('idle');
@@ -135,17 +135,17 @@ export default function Calibration() {
 
       const res = await calibrationApi.recordVoiceSample(newSpeakerName.trim());
 
-      if (res.data?.success) {
+      if (res.success) {
         setVoiceProfiles(prev => ({
           ...prev,
-          [newSpeakerName.trim()]: res.data.profile
+          [newSpeakerName.trim()]: res.profile
         }));
         setNewSpeakerName('');
       } else {
-        setError(res.data?.error || 'Failed to record voice sample');
+        setError(res.error || 'Failed to record voice sample');
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Recording failed');
+      setError(err.message || 'Recording failed');
     } finally {
       setIsRecording(false);
     }
@@ -158,13 +158,13 @@ export default function Calibration() {
 
       const res = await calibrationApi.testLevels();
 
-      if (res.data?.success) {
-        setLevelTest(res.data);
+      if (res.success) {
+        setLevelTest(res);
       } else {
-        setError(res.data?.error || 'Level test failed');
+        setError(res.error || 'Level test failed');
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Level test failed');
+      setError(err.message || 'Level test failed');
     } finally {
       setIsRecording(false);
     }
@@ -175,14 +175,14 @@ export default function Calibration() {
       setLoading(true);
       const res = await calibrationApi.apply();
 
-      if (res.data?.success) {
+      if (res.success) {
         setError(null);
         alert('Calibration applied! Restart daemon for full effect.');
       } else {
-        setError(res.data?.error || 'Failed to apply calibration');
+        setError(res.error || 'Failed to apply calibration');
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Apply failed');
+      setError(err.message || 'Apply failed');
     } finally {
       setLoading(false);
     }
