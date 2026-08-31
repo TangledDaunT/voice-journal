@@ -15,92 +15,51 @@ export default {
     },
     extend: {
       colors: {
-        // Earth tones palette
-        border: '#D4C4B5',
-        input: '#F5F0EB',
-        ring: '#8B7355',
-        background: '#FDF8F3',
-        foreground: '#3D2914',
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
 
         primary: {
-          DEFAULT: '#8B7355',
-          foreground: '#FDF8F3',
-          50: '#FDF8F3',
-          100: '#F5F0EB',
-          200: '#E8DDD4',
-          300: '#D4C4B5',
-          400: '#B8A085',
-          500: '#8B7355',
-          600: '#6B5A45',
-          700: '#554835',
-          800: '#3D2914',
-          900: '#2A1D0E',
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
         },
 
         secondary: {
-          DEFAULT: '#CD853F',
-          foreground: '#FDF8F3',
-          50: '#FDF5EDE',
-          100: '#FAEBD7',
-          200: '#F5D5A8',
-          300: '#EDB86E',
-          400: '#E09837',
-          500: '#CD853F',
-          600: '#A66628',
-          700: '#7F4B1C',
-          800: '#583414',
-          900: '#3D2410',
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
         },
 
         accent: {
-          DEFAULT: '#556B2F',
-          foreground: '#FDF8F3',
-          50: '#F4F6EE',
-          100: '#E9ECDC',
-          200: '#D3D9BA',
-          300: '#B4C08D',
-          400: '#94A261',
-          500: '#556B2F',
-          600: '#435625',
-          700: '#34421C',
-          800: '#262E15',
-          900: '#1A1E0D',
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
         },
 
         muted: {
-          DEFAULT: '#9E8B7A',
-          foreground: '#6B5A45',
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
         },
 
         destructive: {
-          DEFAULT: '#C4413D',
-          foreground: '#FDF8F3',
-        },
-
-        success: {
-          DEFAULT: '#556B2F',
-          foreground: '#FDF8F3',
-        },
-
-        warning: {
-          DEFAULT: '#CD853F',
-          foreground: '#3D2914',
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
         },
 
         card: {
-          DEFAULT: '#FFFFFF',
-          foreground: '#3D2914',
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
         },
 
         popover: {
-          DEFAULT: '#FFFFFF',
-          foreground: '#3D2914',
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
         },
       },
       borderRadius: {
-        lg: '0.75rem',
-        md: '0.5rem',
-        sm: '0.25rem',
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
@@ -115,20 +74,10 @@ export default {
           from: { height: 'var(--radix-accordion-content-height)' },
           to: { height: '0' },
         },
-        'slide-in-right': {
-          from: { transform: 'translateX(100%)' },
-          to: { transform: 'translateX(0)' },
-        },
-        'slide-out-right': {
-          from: { transform: 'translateX(0)' },
-          to: { transform: 'translateX(100%)' },
-        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
-        'slide-in-right': 'slide-in-right 0.3s ease-out',
-        'slide-out-right': 'slide-out-right 0.3s ease-out',
       },
     },
   },
