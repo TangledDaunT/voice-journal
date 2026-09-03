@@ -31,7 +31,7 @@ vad:
 segment_merging:
   merge_gap_seconds: 2.5      # Merge segments within this gap
   min_transcription_unit_seconds: 5.0   # Minimum unit for ASR
-  max_transcription_unit_seconds: 300.0  # Maximum unit (5 min)
+  max_transcription_unit_seconds: 20.0   # Maximum unit (seconds)
 ```
 
 ### Audio Preprocessing
@@ -48,7 +48,7 @@ preprocessing:
 
 ```yaml
 asr:
-  model_size: "large-v3"      # Model: large-v3, distil-large-v3, medium, small
+  model_size: "Hub84/faster-whisper-hinglish-prime"  # Hinglish-specialized model or stock Whisper size
   compute_type: "int8"        # Quantization: int8, int16, float16, float32
   device: "cpu"
   language: null              # Auto-detect for Hindi/English

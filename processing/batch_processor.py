@@ -57,7 +57,10 @@ class StagingQueue:
     Stores raw audio + metadata on disk, tracks backlog in SQLite.
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, disable_denoising: bool = False):
+        if disable_denoising:
+            config = config.model_copy(deep=True)
+            config.preprocessing.enable_denoising = False
         self.config = config
         self.staging_dir = Path(config.audio.audio_storage_path) / "staging"
         self.staging_dir.mkdir(parents=True, exist_ok=True)
@@ -550,14 +553,18 @@ class BatchScheduler:
 
 
 # CLI for manual batch processing
-def run_batch_job(config_path: str = None, use_fallback: bool = False):
+def run_batch_job(
+    config_path: str = None,
+    use_fallback: bool = False,
+    disable_denoising: bool = False
+):
     """Run a batch job manually (CLI entry point)."""
     if config_path:
         config = Config.from_yaml(config_path)
     else:
         config = Config()
 
-    processor = BatchProcessor(config)
+    processor = BatchProcessor(config, disable_denoising=disable_denoising)
     stats = processor.run_batch(use_fallback=use_fallback)
 
     print("\nBatch job complete:")
@@ -573,6 +580,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run batch processing")
     parser.add_argument("--config", "-c", help="Path to config file")
     parser.add_argument("--fallback", action="store_true", help="Use fallback model")
+    parser.add_argument(
+        "--no-denoise",
+        action="store_true",
+        help="Disable denoising for this batch only (diagnostic A/B test)",
+    )
     args = parser.parse_args()
 
-    run_batch_job(config_path=args.config, use_fallback=args.fallback)
+    run_batch_job(
+        config_path=args.config,
+        use_fallback=args.fallback,
+        disable_denoising=args.no_denoise,
+    )

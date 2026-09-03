@@ -80,8 +80,8 @@ def check_config(config_path: str = None):
             config = Config()
 
         # Check model size
-        valid_sizes = ["tiny", "base", "small", "medium", "large-v3", "large-v2", "distil-large-v3"]
-        if config.asr.model_size not in valid_sizes:
+        valid_sizes = {"tiny", "base", "small", "medium", "large-v3", "large-v2", "distil-large-v3"}
+        if config.asr.model_size not in valid_sizes and "/" not in config.asr.model_size:
             issues.append(f"Invalid ASR model_size: {config.asr.model_size}")
 
         # Check compute type

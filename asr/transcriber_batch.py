@@ -1,6 +1,6 @@
 """
 Batch ASR Processor (Fix 3 & 4).
-Transcribes merged segments using large-v3 with confidence gating.
+Transcribes merged segments using a configurable faster-whisper model with confidence gating.
 """
 
 import time
@@ -78,7 +78,7 @@ class TranscriptSegmentWithConfidence:
 class BatchASRProcessor:
     """
     Batch-oriented ASR processor with:
-    - large-v3 model for accuracy
+    - Configurable faster-whisper model for accuracy
     - Anti-hallucination settings
     - Confidence gating and flagging
     """

@@ -133,19 +133,19 @@ vad:
 segment_merging:
   merge_gap_seconds: 2.5  # Merge segments separated by less than this
   min_transcription_unit_seconds: 5.0  # Don't transcribe shorter units
-  max_transcription_unit_seconds: 300.0  # Split if longer than 5 minutes
+  max_transcription_unit_seconds: 20.0  # Bound language-misdetection damage to a short span
 ```
 
 ### ASR (Transcription) - Now batch-processed
 ```yaml
 asr:
-  model_size: "large-v3"  # Accuracy over speed
+  model_size: "Hub84/faster-whisper-hinglish-prime"  # Hinglish-specialized large-v3 fine-tune
   compute_type: "int8"
   language: null          # Auto-detect (Hindi + English)
   vad_filter: true        # Trim silence before transcription
   condition_on_previous_text: false  # Prevent hallucination cascade
   beam_size: 5            # Full beam for accuracy
-  initial_prompt: "Shreyansh, Shivangi, conversation, journal"
+  initial_prompt: "Shreyansh, Shivangi"
   
   # Confidence thresholds for uncertain segments
   no_speech_prob_threshold: 0.6
@@ -388,9 +388,9 @@ python benchmark_asr.py path/to/sample_audio.m4a
 
 ### 4. Code-Switching Accuracy
 
-**Issue**: Hindi-English mixed speech quality varies.
+**Issue**: Stock Whisper can commit to one language for a mixed Hindi-English chunk, producing garbled words in the other language.
 
-**Mitigation**: `large-v3` model handles code-switching better than smaller models. Initial prompt biases toward common names/terms.
+**Mitigation**: The default `Hub84/faster-whisper-hinglish-prime` model is a Hinglish-specialized `large-v3` fine-tune chosen for conversational Hindi-English speech. Use `compare_asr_models.py` to manually compare any future model swap, with denoising on and off, before changing the default.
 
 ### 5. Backlog Growth
 

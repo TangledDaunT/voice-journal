@@ -23,9 +23,9 @@ speaker:
   calibration_file: "./config/voice_profiles.json"
   embedding_similarity_threshold: 0.75  # Cosine similarity threshold for speaker match
 
-# ASR (Stage 4) - Now runs in batch mode with large model
+# ASR (Stage 4) - Now runs in batch mode with a Hinglish-specialized model
 asr:
-  model_size: "large-v3"  # Accuracy over speed
+  model_size: "Hub84/faster-whisper-hinglish-prime"
   compute_type: "int8"
   device: "cpu"
   language: null  # Auto-detect Hindi/English
@@ -48,7 +48,7 @@ segment_merging:
   # Minimum duration for a transcription unit (don't send tiny clips to Whisper)
   min_transcription_unit_seconds: 5.0
   # Maximum duration for a transcription unit (split if needed)
-  max_transcription_unit_seconds: 300.0  # 5 minutes
+  max_transcription_unit_seconds: 20.0  # Bound language-misdetection damage to a short span
 
 # Conversation Grouping (Stage 5) - Coarser grouping for note boundaries
 conversation:

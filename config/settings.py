@@ -45,7 +45,7 @@ class SpeakerConfig(BaseModel):
 
 
 class ASRConfig(BaseModel):
-    model_size: str = Field(default="large-v3")
+    model_size: str = Field(default="Hub84/faster-whisper-hinglish-prime")
     compute_type: str = Field(default="int8")
     device: str = Field(default="cpu")
     language: Optional[str] = None
@@ -61,9 +61,9 @@ class ASRConfig(BaseModel):
     @field_validator("model_size")
     @classmethod
     def validate_model_size(cls, v: str) -> str:
-        valid_sizes = ["tiny", "base", "small", "medium", "large-v3", "large-v2", "distil-large-v3"]
-        if v not in valid_sizes:
-            raise ValueError(f"model_size must be one of {valid_sizes}")
+        valid_sizes = {"tiny", "base", "small", "medium", "large-v3", "large-v2", "distil-large-v3"}
+        if not v or (v not in valid_sizes and "/" not in v):
+            raise ValueError("model_size must be a supported Whisper size or a model repository ID")
         return v
 
     @field_validator("compute_type")
@@ -79,7 +79,7 @@ class SegmentMergingConfig(BaseModel):
     """Configuration for merging VAD segments before transcription."""
     merge_gap_seconds: float = Field(default=2.5, ge=0.0)
     min_transcription_unit_seconds: float = Field(default=5.0, ge=1.0)
-    max_transcription_unit_seconds: float = Field(default=300.0, ge=10.0)
+    max_transcription_unit_seconds: float = Field(default=20.0, ge=10.0)
 
 
 class PreprocessingConfig(BaseModel):
