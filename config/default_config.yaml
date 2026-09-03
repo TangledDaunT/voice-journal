@@ -119,6 +119,7 @@ scheduler:
   min_idle_duration_seconds: 60
   # Check idle status every N seconds
   idle_check_interval: 30
+  process_all_day: true  # Process backlog continuously; do not wait for CPU idle/night
 
   # Guaranteed processing window (even if CPU is busy)
   # During this window, processing runs regardless of user activity
@@ -137,7 +138,7 @@ scheduler:
   # Backlog overflow threshold - switch to faster model when exceeded
   backlog_overflow_hours: 24.0
   # Fallback model for overflow processing
-  fallback_model: "distil-large-v3"
+  fallback_model: "large-v3"
   fallback_compute_type: "int8"
 
 # Backlog tracking (persisted in SQLite)

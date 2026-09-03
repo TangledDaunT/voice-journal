@@ -16,6 +16,7 @@ from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, asdict, field
 import sqlite3
 import psutil
+import numpy as np
 
 from config.settings import Config
 from vad.silero_vad import SpeechSegment
@@ -517,7 +518,10 @@ class BatchScheduler:
         should_run = False
         reason = ""
 
-        if guaranteed_window:
+        if self.scheduler_config.process_all_day:
+            should_run = True
+            reason = "all-day processing enabled"
+        elif guaranteed_window:
             # Overnight: run regardless of CPU, process larger batches
             should_run = True
             reason = "guaranteed window (overnight)"
@@ -532,7 +536,9 @@ class BatchScheduler:
             # Determine batch size based on time of day
             # Daytime: small chunks, re-check idle between batches
             # Overnight: larger chunks, run more aggressively
-            if guaranteed_window:
+            if self.scheduler_config.process_all_day:
+                max_audio_hours = self.scheduler_config.daytime_batch_hours
+            elif guaranteed_window:
                 # Overnight: process larger batches (full-CPU is fine)
                 max_audio_hours = self.scheduler_config.overnight_batch_hours
             else:

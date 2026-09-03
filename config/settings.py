@@ -110,6 +110,7 @@ class SchedulerConfig(BaseModel):
     cpu_idle_threshold: float = Field(default=30.0, ge=0.0, le=100.0)
     min_idle_duration_seconds: int = Field(default=60, ge=10)
     idle_check_interval: int = Field(default=30, ge=10)
+    process_all_day: bool = True
 
     # Guaranteed overnight window
     guaranteed_window_enabled: bool = True
@@ -124,7 +125,7 @@ class SchedulerConfig(BaseModel):
 
     # Fallback for backlog overflow
     backlog_overflow_hours: float = Field(default=24.0, ge=1.0)
-    fallback_model: str = Field(default="distil-large-v3")
+    fallback_model: str = Field(default="large-v3")
     fallback_compute_type: str = Field(default="int8")
 
 
