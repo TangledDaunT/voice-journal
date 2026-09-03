@@ -16,6 +16,7 @@ export interface Conversation {
   transcript?: string
   raw_transcript?: string
   cleaned_transcript?: string
+  audio_url?: string | null
 }
 
 export interface Stats {

@@ -148,13 +148,28 @@ class AudioPreprocessor:
                 return audio
 
         elif self.denoising_method == "rnnoise":
-            # RNNoise would require additional setup (C library with Python bindings)
-            # For now, fall back to noisereduce
-            logger.warning(
-                "RNNoise not yet implemented. "
-                "Install py-rnnoise or use noisereduce instead."
-            )
-            return audio
+            try:
+                from pyrnnoise import RNNoise
+            except ImportError:
+                logger.warning("RNNoise unavailable; install pyrnnoise to use this backend")
+                return audio
+
+            try:
+                denoiser = RNNoise(sample_rate)
+                int16_audio = np.clip(audio * 32767, -32768, 32767).astype(np.int16)
+                frames = [
+                    denoised_frame
+                    for _, denoised_frame in denoiser.denoise_chunk(
+                        int16_audio[np.newaxis, :], partial=True
+                    )
+                ]
+                if not frames:
+                    return audio
+                denoised = np.concatenate(frames, axis=1).reshape(-1)
+                return (denoised.astype(np.float32) / 32767.0)[:len(audio)]
+            except Exception as e:
+                logger.error(f"RNNoise failed: {e}")
+                return audio
 
         else:
             logger.warning(f"Unknown denoising method: {self.denoising_method}")

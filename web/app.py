@@ -11,7 +11,7 @@ import threading
 from queue import Queue
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from flask import Flask, render_template, jsonify, request, send_from_directory, Response
+from flask import Flask, render_template, jsonify, request, send_from_directory, Response, send_file
 from flask_cors import CORS
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -28,6 +28,7 @@ DB_PATH = BASE_DIR / "data" / "voice_journal.db"
 VAULT_PATH = BASE_DIR / "obsidian_vault"
 CONFIG_PATH = BASE_DIR / "config" / "default_config.yaml"
 APP_CONFIG = Config.from_yaml(str(CONFIG_PATH)) if CONFIG_PATH.exists() else Config()
+AUDIO_CACHE_PATH = BASE_DIR / APP_CONFIG.dashboard.audio_cache_path
 
 # Real-time update subscribers
 subscribers = []
@@ -43,6 +44,23 @@ def get_db_connection():
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     return conn
+
+
+@app.route('/api/audio/<date>/<path:filename>')
+def serve_conversation_audio(date, filename):
+    """Serve cached conversation audio with HTTP range support."""
+    audio_dir = AUDIO_CACHE_PATH / date
+    requested = (audio_dir / filename).resolve()
+    if audio_dir.resolve() not in requested.parents or not requested.is_file():
+        return jsonify({"error": "Audio not found"}), 404
+    return send_file(requested, conditional=True, mimetype="audio/ogg")
+
+
+def audio_url_for(row):
+    date = row["date"]
+    cache_dir = AUDIO_CACHE_PATH / date
+    matches = list(cache_dir.glob(f"*-{row['conversation_id']}.ogg")) if cache_dir.exists() else []
+    return f"/api/audio/{date}/{matches[0].name}" if matches else None
 
 
 @app.route('/')
@@ -192,6 +210,7 @@ def get_conversations():
             "summary": row["summary"] or "",
             "raw_transcript": row["raw_transcript"] or row["transcript"] or "",
             "cleaned_transcript": row["cleaned_transcript"] or row["transcript"] or ""
+            ,"audio_url": audio_url_for(row)
         })
 
     conn.close()
@@ -230,6 +249,7 @@ def get_conversation(conv_id):
         "transcript": row["transcript"],
         "raw_transcript": row["raw_transcript"] or row["transcript"] or "",
         "cleaned_transcript": row["cleaned_transcript"] or row["transcript"] or ""
+        ,"audio_url": audio_url_for(row)
     })
 
 

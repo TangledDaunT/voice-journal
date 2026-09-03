@@ -15,6 +15,7 @@ librosa>=0.10.1
 
 # Audio Preprocessing (Fix 5)
 noisereduce>=3.0.0
+pyrnnoise>=0.4.3  # Optional RNNoise backend
 psutil>=5.9.0  # For CPU monitoring and idle detection
 
 # Speaker Identification (Fix 6)

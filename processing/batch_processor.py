@@ -7,6 +7,8 @@ Runs as a scheduled batch job, not in real-time.
 import os
 import json
 import time
+import shutil
+import subprocess
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -293,9 +295,11 @@ class BatchProcessor:
 
         # Preprocess
         log_stage("Batch", "Preprocessing audio...")
+        original_rms_by_unit = []
         for unit in merged_units:
             preprocessed = self.preprocessor.preprocess(unit.audio, unit.sample_rate)
             unit.audio = preprocessed.audio
+            original_rms_by_unit.append(preprocessed.original_rms_db)
 
         # Choose ASR processor
         asr = self._fallback_asr if use_fallback else self._asr_processor
@@ -303,9 +307,23 @@ class BatchProcessor:
         # Transcribe
         log_stage("Batch", f"Transcribing {len(merged_units)} units...")
         transcript_segments = []
+        audio_by_transcript_id = {}
 
         for i, unit in enumerate(merged_units, 1):
             try:
+                original_rms_db = original_rms_by_unit[i - 1]
+                if original_rms_db < self.config.preprocessing.min_rms_db_for_asr:
+                    for source_seg in unit.source_segments:
+                        if hasattr(source_seg, 'segment_id'):
+                            self.staging_queue.mark_processed(source_seg.segment_id)
+                    log_stage(
+                        "ASR",
+                        f"Skipped low-energy unit {i}: "
+                        f"rms={original_rms_db:.1f}dB, "
+                        f"threshold={self.config.preprocessing.min_rms_db_for_asr:.1f}dB"
+                    )
+                    continue
+
                 # Transcribe
                 result = asr.transcribe_merged_segment(unit)
 
@@ -316,6 +334,7 @@ class BatchProcessor:
                             self.staging_queue.mark_processed(source_seg.segment_id)
 
                     transcript_segments.append(result)
+                    audio_by_transcript_id[id(result)] = (unit.audio.copy(), unit.sample_rate)
                     log_stage("Batch", f"[{i}/{len(merged_units)}] {unit.duration_seconds:.1f}s → {result.word_count} words")
 
             except Exception as e:
@@ -340,6 +359,8 @@ class BatchProcessor:
                     conversation,
                     transcript=cleanup.cleaned_transcript
                 )
+
+                self._cache_conversation_audio(conversation, audio_by_transcript_id)
 
                 # Write to Obsidian
                 note_path = self._obsidian_writer.write_conversation_note(
@@ -381,6 +402,41 @@ class BatchProcessor:
         log_stage("Batch", f"Job complete: {conversations_created} conversations in {duration:.1f}s")
 
         return stats
+
+    def _cache_conversation_audio(self, conversation, audio_by_transcript_id):
+        """Cache the preprocessed audio represented by a conversation as Opus."""
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            logger.warning("Audio cache skipped: ffmpeg is not installed")
+            return
+
+        audio_parts = [
+            audio_by_transcript_id[id(segment)][0]
+            for segment in conversation.transcript_segments
+            if id(segment) in audio_by_transcript_id
+        ]
+        if not audio_parts:
+            return
+
+        sample_rate = audio_by_transcript_id[id(conversation.transcript_segments[0])][1]
+        date_dir = Path(self.config.dashboard.audio_cache_path) / conversation.start_time.strftime("%Y-%m-%d")
+        date_dir.mkdir(parents=True, exist_ok=True)
+        output_path = date_dir / f"{conversation.start_time.strftime('%H%M')}-{conversation.conversation_id}.ogg"
+        audio = np.concatenate(audio_parts).astype(np.float32)
+        try:
+            subprocess.run(
+                [ffmpeg, "-y", "-f", "f32le", "-ar", str(sample_rate), "-ac", "1", "-i", "pipe:0",
+                 "-c:a", "libopus", "-b:a", "32k", str(output_path)],
+                input=audio.tobytes(), check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+            )
+            log_stage("AudioCache", f"Cached conversation audio: {output_path}")
+        except (OSError, subprocess.CalledProcessError) as exc:
+            logger.warning(f"Audio cache failed for conversation {conversation.conversation_id}: {exc}")
+
+        cutoff = time.time() - self.config.dashboard.audio_retention_days * 86400
+        for cached_file in Path(self.config.dashboard.audio_cache_path).rglob("*.ogg"):
+            if cached_file.stat().st_mtime < cutoff:
+                cached_file.unlink(missing_ok=True)
 
 
 class BatchScheduler:

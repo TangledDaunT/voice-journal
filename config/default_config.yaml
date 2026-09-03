@@ -13,7 +13,7 @@ audio:
 # VAD (Stage 2) - Runs near-real-time, segments stored for batch processing
 vad:
   model_path: "./models/silero_vad.onnx"
-  threshold: 0.5
+  threshold: 0.6
   min_segment_duration: 0.5
   silence_padding: 0.3
   max_segment_duration: 30.0
@@ -30,6 +30,9 @@ asr:
   device: "cpu"
   language: null  # Auto-detect Hindi/English
   beam_size: 5
+  compression_ratio_threshold: 2.4
+  no_repeat_ngram_size: 3
+  repetition_penalty: 1.3
   vad_filter: true
   condition_on_previous_text: false  # Prevent hallucination cascade
 
@@ -87,6 +90,11 @@ database:
   path: "./data/voice_journal.db"
   enable_fts: true
 
+# Dashboard audio playback (separate from raw staging retention)
+dashboard:
+  audio_cache_path: "./audio_cache"
+  audio_retention_days: 30
+
 # Daemon settings
 daemon:
   log_level: "INFO"
@@ -100,6 +108,7 @@ preprocessing:
   denoising_method: "noisereduce"  # or "rnnoise"
   gain_normalization: true
   target_db: -20.0  # Target loudness in dB
+  min_rms_db_for_asr: -55.0  # Skip near-silent merged units before Whisper
 
 # Batch Processing Scheduler (replaces real-time processing)
 scheduler:

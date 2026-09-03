@@ -55,6 +55,7 @@ class TranscriptSegmentWithConfidence:
     # Confidence metrics (NEW)
     confidence_metrics: Optional[ConfidenceMetrics] = None
     low_confidence: bool = False
+    repetition_detected: bool = False
 
     # Source tracking
     merge_count: int = 1
@@ -70,7 +71,12 @@ class TranscriptSegmentWithConfidence:
         speaker = self.speaker.capitalize()
 
         # Add confidence marker
-        marker = " ⚠️" if self.low_confidence else ""
+        markers = []
+        if self.low_confidence:
+            markers.append("⚠️")
+        if self.repetition_detected:
+            markers.append("⚠️ repetition-detected")
+        marker = f" {' '.join(markers)}" if markers else ""
 
         return f"[{timestamp}] {speaker}: {self.text}{marker}"
 
@@ -96,6 +102,9 @@ class BatchASRProcessor:
         self.vad_filter = self.asr_config.vad_filter
         self.condition_on_previous_text = self.asr_config.condition_on_previous_text
         self.beam_size = self.asr_config.beam_size
+        self.compression_ratio_threshold = self.asr_config.compression_ratio_threshold
+        self.no_repeat_ngram_size = self.asr_config.no_repeat_ngram_size
+        self.repetition_penalty = self.asr_config.repetition_penalty
         self.initial_prompt = self.asr_config.initial_prompt
 
         # Confidence thresholds
@@ -168,6 +177,9 @@ class BatchASRProcessor:
                 beam_size=self.beam_size,
                 vad_filter=self.vad_filter,
                 condition_on_previous_text=self.condition_on_previous_text,
+                compression_ratio_threshold=self.compression_ratio_threshold,
+                no_repeat_ngram_size=self.no_repeat_ngram_size,
+                repetition_penalty=self.repetition_penalty,
                 temperature=0.0,  # Deterministic
                 initial_prompt=self.initial_prompt
             )
@@ -217,6 +229,15 @@ class BatchASRProcessor:
             if not text:
                 return None
 
+            repetition_detected = self._has_repetition_loop(text)
+            if repetition_detected:
+                logger.warning(
+                    "Repetition loop detected in ASR output: "
+                    f"start={merged_segment.start_time.isoformat()}, "
+                    f"end={merged_segment.end_time.isoformat()}, "
+                    f"text={text[:120]!r}"
+                )
+
             # Calculate average confidence
             avg_no_speech_prob = np.mean(no_speech_probs) if no_speech_probs else 0.0
             avg_logprob = np.mean(avg_logprobs) if avg_logprobs else -1.0
@@ -253,6 +274,7 @@ class BatchASRProcessor:
                 words=word_list,
                 confidence_metrics=confidence,
                 low_confidence=is_low_confidence,
+                repetition_detected=repetition_detected,
                 merge_count=merged_segment.merge_count,
                 source_segments=len(merged_segment.source_segments)
             )
@@ -263,6 +285,9 @@ class BatchASRProcessor:
 
             if is_low_confidence:
                 self.stats["low_confidence_flagged"] += 1
+            if repetition_detected:
+                self.stats.setdefault("repetition_detected", 0)
+                self.stats["repetition_detected"] += 1
 
             # Log
             processing_time = time.time() - start_time
@@ -272,7 +297,7 @@ class BatchASRProcessor:
             log_metric("ASR", "no_speech_prob", avg_no_speech_prob)
             log_metric("ASR", "avg_logprob", avg_logprob)
 
-            marker = " ⚠️" if is_low_confidence else ""
+            marker = " ⚠️ repetition-detected" if repetition_detected else (" ⚠️" if is_low_confidence else "")
             log_stage("ASR", f"[{result.word_count}w]{marker} {text[:60]}...")
 
             return result
@@ -280,6 +305,29 @@ class BatchASRProcessor:
         except Exception as e:
             logger.error(f"Transcription error: {e}")
             return None
+
+    @staticmethod
+    def _has_repetition_loop(text: str, threshold: float = 0.4) -> bool:
+        """Detect pathological repeated characters or short n-grams."""
+        compact_text = "".join(text.split())
+        if len(compact_text) < 12:
+            return False
+
+        for ngram_size in range(1, 5):
+            counts = {}
+            for index in range(len(compact_text) - ngram_size + 1):
+                ngram = compact_text[index:index + ngram_size]
+                counts[ngram] = counts.get(ngram, 0) + 1
+            repeated_ngram, count = max(counts.items(), key=lambda item: item[1])
+            covered_ratio = count * ngram_size / len(compact_text)
+            minimum_repeats = 8 if ngram_size == 1 else 5
+            if count >= minimum_repeats and covered_ratio > threshold:
+                logger.debug(
+                    f"Repetition candidate: ngram={repeated_ngram!r}, "
+                    f"count={count}, ratio={covered_ratio:.2f}"
+                )
+                return True
+        return False
 
     def _correct_language(self, text: str, detected_lang: str) -> str:
         """

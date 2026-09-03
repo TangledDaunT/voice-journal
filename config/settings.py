@@ -25,7 +25,7 @@ class AudioConfig(BaseModel):
 
 class VADConfig(BaseModel):
     model_path: str = "./models/silero_vad.onnx"
-    threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     min_segment_duration: float = Field(default=0.5, ge=0.0)
     silence_padding: float = Field(default=0.3, ge=0.0)
     max_segment_duration: float = Field(default=30.0, ge=1.0)
@@ -50,6 +50,9 @@ class ASRConfig(BaseModel):
     device: str = Field(default="cpu")
     language: Optional[str] = None
     beam_size: int = Field(default=5, ge=1)
+    compression_ratio_threshold: float = Field(default=2.4, gt=0.0)
+    no_repeat_ngram_size: int = Field(default=3, ge=0)
+    repetition_penalty: float = Field(default=1.3, ge=0.0)
     vad_filter: bool = True
     condition_on_previous_text: bool = False
     initial_prompt: Optional[str] = "Shreyansh, Shivangi. Use only Hindi and English."
@@ -88,6 +91,7 @@ class PreprocessingConfig(BaseModel):
     denoising_method: str = Field(default="noisereduce")
     gain_normalization: bool = True
     target_db: float = Field(default=-20.0)
+    min_rms_db_for_asr: float = Field(default=-55.0, le=0.0)
 
 
 class CleanupConfig(BaseModel):
@@ -159,6 +163,12 @@ class DatabaseConfig(BaseModel):
     enable_fts: bool = True
 
 
+class DashboardConfig(BaseModel):
+    """Retention policy for conversation audio playable from the dashboard."""
+    audio_cache_path: str = "./audio_cache"
+    audio_retention_days: int = Field(default=30, ge=0)
+
+
 class DaemonConfig(BaseModel):
     log_level: str = Field(default="INFO")
     log_file: str = "./logs/voice_journal.log"
@@ -184,6 +194,7 @@ class Config(BaseSettings):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     backlog: BacklogConfig = Field(default_factory=BacklogConfig)

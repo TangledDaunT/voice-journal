@@ -120,12 +120,22 @@ audio:
   keep_audio: false  # Set to true to save audio clips
 ```
 
+Dashboard conversation audio is stored separately as compressed Opus under `dashboard.audio_cache_path` and retained for `dashboard.audio_retention_days` (30 by default). This is independent of `audio.keep_audio`.
+
 ### VAD (Voice Activity Detection)
 ```yaml
 vad:
-  threshold: 0.5
+  threshold: 0.6
   min_segment_duration: 0.5  # Discard short noise
   max_segment_duration: 30.0  # Split long segments
+```
+
+### Audio Preprocessing
+```yaml
+preprocessing:
+  enable_denoising: true
+  denoising_method: "noisereduce"  # or "rnnoise"
+  min_rms_db_for_asr: -55.0        # Skip near-silent units before Whisper
 ```
 
 ### Segment Merging (Fix 2)
@@ -150,6 +160,9 @@ asr:
   # Confidence thresholds for uncertain segments
   no_speech_prob_threshold: 0.6
   avg_logprob_threshold: -1.0
+  compression_ratio_threshold: 2.4
+  no_repeat_ngram_size: 3
+  repetition_penalty: 1.3
 ```
 
 ### Transcript Cleanup (Stage 6.5)
@@ -405,7 +418,15 @@ python benchmark_asr.py path/to/sample_audio.m4a
 
 The optional Stage 6.5 Ollama pass removes meaningless fillers, resolves clear self-corrections, fixes obvious dictionary terms, and adds punctuation. It is conservative and never replaces the raw transcript: conversation notes and SQLite retain both `raw_transcript` and `cleaned_transcript`. Cleanup failures fall back to raw text and do not block processing. The extra Ollama call adds processing time per conversation and is included in the batch job duration/backlog estimate.
 
-### 6. Backlog Growth
+### 6. Repetition-Loop Hallucinations
+
+Whisper can occasionally repeat a character or short phrase indefinitely, even with high token confidence. Decoder repetition safeguards are enabled, and a separate post-ASR detector keeps the output but marks it `⚠️ repetition-detected` and logs the affected time range. Near-silent merged units are skipped before ASR using the configurable RMS floor.
+
+### 7. Dashboard Audio Privacy
+
+Conversation audio is cached as compressed Opus for 30 days by default and is playable from the dashboard. This is a meaningfully larger privacy exposure than text transcripts because it includes Shivangi's actual voice. The dashboard is currently reachable only through the Tailscale address (`100.99.161.57`), which is the security boundary; adjust `dashboard.audio_retention_days` or disable network access if that boundary is not acceptable.
+
+### 8. Backlog Growth
 
 **Issue**: If daily speech exceeds overnight processing capacity, backlog grows.
 

@@ -72,6 +72,21 @@ class TestTranscriptSegmentWithConfidence:
 
         assert "⚠️" in formatted
 
+    def test_format_for_obsidian_repetition_detected(self):
+        segment = TranscriptSegmentWithConfidence(
+            text="बच्च्च्च्च्च्च्च्च्च्च्च्च्च्च्च्च्च्च",
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+            duration_seconds=5.0,
+            language="hi",
+            language_probability=0.9,
+            speaker="unknown",
+            speaker_confidence=0.0,
+            repetition_detected=True,
+        )
+
+        assert "repetition-detected" in segment.format_for_obsidian()
+
 
 class TestBatchASRProcessor:
     """Tests for BatchASRProcessor."""
@@ -97,6 +112,13 @@ class TestBatchASRProcessor:
         # At 1.0 should return 1.0
         conf = processor._similarity_to_confidence(1.0)
         assert conf == pytest.approx(1.0, abs=0.1)
+
+    def test_repetition_loop_detection(self):
+        repeated = "अब " * 80
+        normal = "अब हम इस बातचीत के अगले हिस्से पर चलते हैं और फिर वापस आते हैं"
+
+        assert BatchASRProcessor._has_repetition_loop(repeated)
+        assert not BatchASRProcessor._has_repetition_loop(normal)
 
     def test_correct_language_hindi_to_russian(self):
         """Test Hindi misidentified as Russian correction."""

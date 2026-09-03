@@ -144,6 +144,9 @@ export function Conversations() {
                     </pre>
                   </div>
                 )}
+                {selectedConv.audio_url && (
+                  <audio className="w-full" controls preload="metadata" src={selectedConv.audio_url} />
+                )}
                 {(selectedConv.raw_transcript || selectedConv.transcript) && (
                   <details>
                     <summary className="cursor-pointer text-sm font-medium text-muted-foreground">Raw Transcript</summary>

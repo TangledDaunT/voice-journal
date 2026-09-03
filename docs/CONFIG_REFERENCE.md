@@ -19,7 +19,7 @@ audio:
 ```yaml
 vad:
   model_path: "./models/silero_vad.onnx"
-  threshold: 0.5              # Speech detection threshold (0-1)
+  threshold: 0.6              # Speech detection threshold (0-1)
   min_segment_duration: 0.5   # Discard shorter segments (seconds)
   silence_padding: 0.3        # Add padding around speech
   max_segment_duration: 30.0  # Split longer segments
@@ -42,6 +42,7 @@ preprocessing:
   denoising_method: "noisereduce"  # or "rnnoise"
   gain_normalization: true
   target_db: -20.0             # Target loudness
+  min_rms_db_for_asr: -55.0    # Skip near-silent units before Whisper
 ```
 
 ### ASR (Stage 4)
@@ -56,6 +57,9 @@ asr:
   vad_filter: true            # Filter silence before decode
   condition_on_previous_text: false  # Prevents hallucination cascade
   initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
+  compression_ratio_threshold: 2.4
+  no_repeat_ngram_size: 3
+  repetition_penalty: 1.3
 
   # Confidence thresholds
   no_speech_prob_threshold: 0.6
@@ -70,6 +74,13 @@ cleanup:
   timeout_seconds: 45
   max_tokens: 1200
   estimated_seconds_per_conversation: 30
+```
+
+### Dashboard Audio Playback
+```yaml
+dashboard:
+  audio_cache_path: "./audio_cache"
+  audio_retention_days: 30
 ```
 
 ### Scheduler
