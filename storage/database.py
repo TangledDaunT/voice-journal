@@ -151,13 +151,24 @@ class SQLiteStore:
 
             # Create FTS if enabled
             if self.config.database.enable_fts:
-                cursor.executescript("""
-                    DROP TRIGGER IF EXISTS conversations_ai;
-                    DROP TRIGGER IF EXISTS conversations_ad;
-                    DROP TRIGGER IF EXISTS conversations_au;
-                    DROP TABLE IF EXISTS conversations_fts;
-                """)
-                cursor.executescript(SCHEMA_FTS)
+                fts_schema = cursor.execute(
+                    "SELECT sql FROM sqlite_master WHERE name = 'conversations_fts'"
+                ).fetchone()
+                fts_needs_migration = not fts_schema or not all(
+                    column in fts_schema[0]
+                    for column in ("raw_transcript", "cleaned_transcript")
+                )
+                if fts_needs_migration:
+                    cursor.executescript("""
+                        DROP TRIGGER IF EXISTS conversations_ai;
+                        DROP TRIGGER IF EXISTS conversations_ad;
+                        DROP TRIGGER IF EXISTS conversations_au;
+                        DROP TABLE IF EXISTS conversations_fts;
+                    """)
+                    cursor.executescript(SCHEMA_FTS)
+                    cursor.execute(
+                        "INSERT INTO conversations_fts(conversations_fts) VALUES ('rebuild')"
+                    )
 
             log_stage("SQLite", "Database initialized")
 
