@@ -165,7 +165,8 @@ def get_conversations():
         SELECT
             id, conversation_id, date, start_time, end_time,
             duration_seconds, participants, source_type,
-            is_shivangi_conversation, quality, languages, summary
+            is_shivangi_conversation, quality, languages, summary,
+            transcript, raw_transcript, cleaned_transcript
         FROM conversations
         WHERE (? IS NULL OR date = ?)
         ORDER BY start_time DESC
@@ -255,9 +256,10 @@ def search_conversations():
         cursor.execute("""
             SELECT * FROM conversations
             WHERE summary LIKE ? OR transcript LIKE ?
+               OR raw_transcript LIKE ? OR cleaned_transcript LIKE ?
             ORDER BY date DESC, start_time DESC
             LIMIT 50
-        """, (f'%{query}%', f'%{query}%'))
+        """, (f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%'))
 
     rows = cursor.fetchall()
     conn.close()
