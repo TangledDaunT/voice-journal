@@ -48,18 +48,28 @@ preprocessing:
 
 ```yaml
 asr:
-  model_size: "Hub84/faster-whisper-hinglish-prime"  # Hinglish-specialized model or stock Whisper size
+  model_size: "large-v3"      # Stock Whisper model
   compute_type: "int8"        # Quantization: int8, int16, float16, float32
   device: "cpu"
   language: null              # Auto-detect for Hindi/English
   beam_size: 5               # Decoding beam width
   vad_filter: true            # Filter silence before decode
   condition_on_previous_text: false  # Prevents hallucination cascade
-  initial_prompt: "Shreyansh, Shivangi"  # Proper nouns only
+  initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
 
   # Confidence thresholds
   no_speech_prob_threshold: 0.6
   avg_logprob_threshold: -1.0
+```
+
+### Transcript Cleanup (Stage 6.5)
+```yaml
+cleanup:
+  enabled: true
+  custom_dictionary: ["Shreyansh", "Shivangi", "Cupid", "MindBridge", "OpenClaw", "LegalLawAdvisor"]
+  timeout_seconds: 45
+  max_tokens: 1200
+  estimated_seconds_per_conversation: 30
 ```
 
 ### Scheduler

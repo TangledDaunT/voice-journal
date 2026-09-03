@@ -332,20 +332,29 @@ class BatchProcessor:
 
         for conversation in conversations:
             try:
-                # LLM classification
-                classification = self._llm_classifier.classify(conversation)
+                # Cleanup is optional and never replaces the raw ASR transcript.
+                cleanup = self._llm_classifier.cleanup(conversation)
+
+                # Classify the readable version while retaining raw text for storage.
+                classification = self._llm_classifier.classify(
+                    conversation,
+                    transcript=cleanup.cleaned_transcript
+                )
 
                 # Write to Obsidian
                 note_path = self._obsidian_writer.write_conversation_note(
                     conversation,
-                    classification
+                    classification,
+                    cleaned_transcript=cleanup.cleaned_transcript
                 )
 
                 # Store in SQLite
                 self._sqlite_store.insert_conversation(
                     conversation,
                     classification,
-                    note_path
+                    note_path,
+                    raw_transcript=cleanup.raw_transcript,
+                    cleaned_transcript=cleanup.cleaned_transcript
                 )
 
                 conversations_created += 1

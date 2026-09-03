@@ -139,17 +139,26 @@ segment_merging:
 ### ASR (Transcription) - Now batch-processed
 ```yaml
 asr:
-  model_size: "Hub84/faster-whisper-hinglish-prime"  # Hinglish-specialized large-v3 fine-tune
+  model_size: "large-v3"  # Stock Whisper large model
   compute_type: "int8"
   language: null          # Auto-detect (Hindi + English)
   vad_filter: true        # Trim silence before transcription
   condition_on_previous_text: false  # Prevent hallucination cascade
   beam_size: 5            # Full beam for accuracy
-  initial_prompt: "Shreyansh, Shivangi"
+  initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
   
   # Confidence thresholds for uncertain segments
   no_speech_prob_threshold: 0.6
   avg_logprob_threshold: -1.0
+```
+
+### Transcript Cleanup (Stage 6.5)
+```yaml
+cleanup:
+  enabled: true
+  custom_dictionary: ["Shreyansh", "Shivangi", "Cupid", "MindBridge", "OpenClaw", "LegalLawAdvisor"]
+  timeout_seconds: 45
+  max_tokens: 1200
 ```
 
 ### Batch Processing Scheduler
@@ -390,9 +399,13 @@ python benchmark_asr.py path/to/sample_audio.m4a
 
 **Issue**: Stock Whisper can commit to one language for a mixed Hindi-English chunk, producing garbled words in the other language.
 
-**Mitigation**: The default `Hub84/faster-whisper-hinglish-prime` model is a Hinglish-specialized `large-v3` fine-tune chosen for conversational Hindi-English speech. Use `compare_asr_models.py` to manually compare any future model swap, with denoising on and off, before changing the default.
+**Mitigation**: The default `large-v3` model is explicitly prompted to output only Hindi and English. A separate Stage 6.5 cleanup pass improves readability without replacing raw ASR. Use `compare_asr_models.py` to manually compare future ASR model swaps before changing the default.
 
-### 5. Backlog Growth
+### 5. Transcript Cleanup
+
+The optional Stage 6.5 Ollama pass removes meaningless fillers, resolves clear self-corrections, fixes obvious dictionary terms, and adds punctuation. It is conservative and never replaces the raw transcript: conversation notes and SQLite retain both `raw_transcript` and `cleaned_transcript`. Cleanup failures fall back to raw text and do not block processing. The extra Ollama call adds processing time per conversation and is included in the batch job duration/backlog estimate.
+
+### 6. Backlog Growth
 
 **Issue**: If daily speech exceeds overnight processing capacity, backlog grows.
 

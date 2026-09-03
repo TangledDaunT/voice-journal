@@ -75,6 +75,27 @@ Return ONLY valid JSON matching this schema:
 {schema}
 """
 
+TRANSCRIPT_CLEANUP_PROMPT = """You are a conservative transcript editor for a personal voice journal.
+
+Clean the raw ASR transcript below with the lightest possible touch.
+- Remove filler words and verbal tics only when they carry no meaning.
+- Resolve false starts and self-corrections by keeping the corrected final meaning.
+- Correct an obvious proper-noun error only when the custom dictionary makes the correction clear.
+- Add reasonable punctuation and sentence structure.
+- Preserve the Hindi-English language mix exactly. Do not translate Hindi or English.
+- Preserve speaker labels, timestamps, and the line structure.
+
+ABSOLUTE RULES:
+- Do not invent, embellish, summarize, infer, or add any information.
+- Do not rewrite uncertain wording. When unsure, preserve the raw wording.
+- Return only the lightly edited transcript, with no explanation or markdown fence.
+
+Custom dictionary (reference only, never force a guess): {dictionary}
+
+RAW TRANSCRIPT:
+{transcript}
+"""
+
 
 @dataclass
 class ClassificationResult:
@@ -86,6 +107,15 @@ class ClassificationResult:
     summary: str
     confidence_note: str = ""
     raw_response: str = ""
+    processing_time_ms: float = 0.0
+    error: Optional[str] = None
+
+
+@dataclass
+class CleanupResult:
+    """Result of the optional transcript cleanup stage."""
+    raw_transcript: str
+    cleaned_transcript: str
     processing_time_ms: float = 0.0
     error: Optional[str] = None
 
@@ -120,7 +150,8 @@ class LLMClassifier:
 
     def _build_prompt(
         self,
-        conversation: ConversationUnit
+        conversation: ConversationUnit,
+        transcript: Optional[str] = None
     ) -> str:
         """Build the classification prompt."""
         # Build pre-flag info
@@ -145,7 +176,7 @@ class LLMClassifier:
         prompt = CLASSIFICATION_PROMPT.format(
             preflag_info=json.dumps(preflag_info, indent=2),
             speaker_info=json.dumps(speaker_info, indent=2),
-            transcript=conversation.full_transcript,
+            transcript=transcript if transcript is not None else conversation.full_transcript,
             schema=json.dumps(CLASSIFICATION_SCHEMA, indent=2)
         )
 
@@ -154,7 +185,8 @@ class LLMClassifier:
     def classify(
         self,
         conversation: ConversationUnit,
-        retry_count: int = 0
+        retry_count: int = 0,
+        transcript: Optional[str] = None
     ) -> ClassificationResult:
         """
         Classify a conversation unit using the local LLM.
@@ -177,7 +209,7 @@ class LLMClassifier:
             )
 
         # Build prompt
-        prompt = self._build_prompt(conversation)
+        prompt = self._build_prompt(conversation, transcript)
 
         try:
             # API endpoint for chat completion
@@ -224,7 +256,7 @@ class LLMClassifier:
                 # Retry once on parse failure
                 if retry_count < self.max_retries:
                     log_stage("LLM", f"Retrying classification (attempt {retry_count + 1})")
-                    return self.classify(conversation, retry_count + 1)
+                    return self.classify(conversation, retry_count + 1, transcript)
                 else:
                     return classification
 
@@ -245,6 +277,49 @@ class LLMClassifier:
         except Exception as e:
             logger.error(f"LLM error: {e}")
             return self._fallback_classification(conversation, str(e))
+
+    def cleanup(self, conversation: ConversationUnit) -> CleanupResult:
+        """Conservatively clean a conversation, falling back to raw text on failure."""
+        raw_transcript = conversation.full_transcript
+        if not self.config.cleanup.enabled or not raw_transcript.strip():
+            return CleanupResult(raw_transcript, raw_transcript)
+
+        start_time = time.time()
+        prompt = TRANSCRIPT_CLEANUP_PROMPT.format(
+            dictionary=", ".join(self.config.cleanup.custom_dictionary),
+            transcript=raw_transcript
+        )
+        try:
+            response = self.session.post(
+                f"{self.host}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                    "options": {"temperature": 0.0, "num_predict": self.config.cleanup.max_tokens}
+                },
+                timeout=self.config.cleanup.timeout_seconds
+            )
+            if response.status_code != 200:
+                raise RuntimeError(f"API error: {response.status_code}")
+            cleaned = response.json().get("message", {}).get("content", "")
+            if not isinstance(cleaned, str) or not cleaned.strip():
+                raise ValueError("empty cleanup response")
+            if not 0.25 <= len(cleaned) / max(len(raw_transcript), 1) <= 2.5:
+                raise ValueError("cleanup response length is implausible")
+
+            elapsed = (time.time() - start_time) * 1000
+            log_metric("LLM", "cleanup_time", elapsed, "ms")
+            log_stage("LLM", f"#{conversation.conversation_id}: transcript cleanup complete")
+            return CleanupResult(raw_transcript, cleaned.strip(), elapsed)
+        except Exception as e:
+            logger.error(f"Transcript cleanup failed for #{conversation.conversation_id}: {e}")
+            return CleanupResult(
+                raw_transcript,
+                raw_transcript,
+                (time.time() - start_time) * 1000,
+                str(e)
+            )
 
     def _parse_llm_response(self, raw_content: str) -> ClassificationResult:
         """Parse JSON from LLM response."""

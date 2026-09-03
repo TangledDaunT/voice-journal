@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     languages TEXT NOT NULL,  -- JSON array
     summary TEXT,
     transcript TEXT,
+    raw_transcript TEXT,
+    cleaned_transcript TEXT,
     slug TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -48,27 +50,28 @@ CREATE INDEX IF NOT EXISTS idx_conversations_shivangi ON conversations(is_shivan
 SCHEMA_FTS = """
 CREATE VIRTUAL TABLE IF NOT EXISTS conversations_fts USING fts5(
     summary,
-    transcript,
+    raw_transcript,
+    cleaned_transcript,
     content='conversations',
     content_rowid='id'
 );
 
 -- Triggers to keep FTS in sync
 CREATE TRIGGER IF NOT EXISTS conversations_ai AFTER INSERT ON conversations BEGIN
-    INSERT INTO conversations_fts(rowid, summary, transcript)
-    VALUES (new.id, new.summary, new.transcript);
+    INSERT INTO conversations_fts(rowid, summary, raw_transcript, cleaned_transcript)
+    VALUES (new.id, new.summary, new.raw_transcript, new.cleaned_transcript);
 END;
 
 CREATE TRIGGER IF NOT EXISTS conversations_ad AFTER DELETE ON conversations BEGIN
-    INSERT INTO conversations_fts(conversations_fts, rowid, summary, transcript)
-    VALUES('delete', old.id, old.summary, old.transcript);
+    INSERT INTO conversations_fts(conversations_fts, rowid, summary, raw_transcript, cleaned_transcript)
+    VALUES('delete', old.id, old.summary, old.raw_transcript, old.cleaned_transcript);
 END;
 
 CREATE TRIGGER IF NOT EXISTS conversations_au AFTER UPDATE ON conversations BEGIN
-    INSERT INTO conversations_fts(conversations_fts, rowid, summary, transcript)
-    VALUES('delete', old.id, old.summary, old.transcript);
-    INSERT INTO conversations_fts(rowid, summary, transcript)
-    VALUES (new.id, new.summary, new.transcript);
+    INSERT INTO conversations_fts(conversations_fts, rowid, summary, raw_transcript, cleaned_transcript)
+    VALUES('delete', old.id, old.summary, old.raw_transcript, old.cleaned_transcript);
+    INSERT INTO conversations_fts(rowid, summary, raw_transcript, cleaned_transcript)
+    VALUES (new.id, new.summary, new.raw_transcript, new.cleaned_transcript);
 END;
 """
 
@@ -89,6 +92,8 @@ class ConversationRecord:
     languages: List[str]
     summary: str
     transcript: str
+    raw_transcript: str
+    cleaned_transcript: str
     slug: str
     created_at: str
     updated_at: str
@@ -134,8 +139,24 @@ class SQLiteStore:
             # Create tables
             cursor.executescript(SCHEMA_CONVERSATIONS)
 
+            columns = {row[1] for row in cursor.execute("PRAGMA table_info(conversations)")}
+            if "raw_transcript" not in columns:
+                cursor.execute("ALTER TABLE conversations ADD COLUMN raw_transcript TEXT")
+            if "cleaned_transcript" not in columns:
+                cursor.execute("ALTER TABLE conversations ADD COLUMN cleaned_transcript TEXT")
+            cursor.execute(
+                "UPDATE conversations SET raw_transcript = COALESCE(raw_transcript, transcript), "
+                "cleaned_transcript = COALESCE(cleaned_transcript, transcript)"
+            )
+
             # Create FTS if enabled
             if self.config.database.enable_fts:
+                cursor.executescript("""
+                    DROP TRIGGER IF EXISTS conversations_ai;
+                    DROP TRIGGER IF EXISTS conversations_ad;
+                    DROP TRIGGER IF EXISTS conversations_au;
+                    DROP TABLE IF EXISTS conversations_fts;
+                """)
                 cursor.executescript(SCHEMA_FTS)
 
             log_stage("SQLite", "Database initialized")
@@ -144,7 +165,9 @@ class SQLiteStore:
         self,
         conversation: ConversationUnit,
         classification: ClassificationResult,
-        note_path: Path
+        note_path: Path,
+        raw_transcript: Optional[str] = None,
+        cleaned_transcript: Optional[str] = None
     ) -> int:
         """
         Insert a conversation into the database.
@@ -168,7 +191,9 @@ class SQLiteStore:
                 'quality': classification.quality,
                 'languages': json.dumps(sorted(list(conversation.languages))),
                 'summary': classification.summary,
-                'transcript': conversation.full_transcript,
+                'transcript': raw_transcript or conversation.full_transcript,
+                'raw_transcript': raw_transcript or conversation.full_transcript,
+                'cleaned_transcript': cleaned_transcript or raw_transcript or conversation.full_transcript,
                 'slug': note_path.stem if note_path else ""
             }
 
@@ -187,12 +212,12 @@ class SQLiteStore:
                     conversation_id, date, start_time, end_time,
                     duration_seconds, participants, source_type,
                     is_shivangi_conversation, quality, languages,
-                    summary, transcript, slug
+                    summary, transcript, raw_transcript, cleaned_transcript, slug
                 ) VALUES (
                     :conversation_id, :date, :start_time, :end_time,
                     :duration_seconds, :participants, :source_type,
                     :is_shivangi_conversation, :quality, :languages,
-                    :summary, :transcript, :slug
+                    :summary, :transcript, :raw_transcript, :cleaned_transcript, :slug
                 )
             """, data)
 
@@ -398,6 +423,8 @@ class SQLiteStore:
             languages=json.loads(row['languages']),
             summary=row['summary'],
             transcript=row['transcript'],
+            raw_transcript=row['raw_transcript'] or row['transcript'],
+            cleaned_transcript=row['cleaned_transcript'] or row['transcript'],
             slug=row['slug'],
             created_at=row['created_at'],
             updated_at=row['updated_at']
@@ -666,6 +693,15 @@ class BacklogTracker:
         return {
             "total_hours": summary["total_hours"] if summary else 0,
             "segment_count": summary["segment_count"] if summary else 0,
+            "estimated_cleanup_hours": (
+                (summary["segment_count"] if summary else 0)
+                * self.config.cleanup.estimated_seconds_per_conversation / 3600
+            ),
+            "estimated_processing_hours": (
+                (summary["total_hours"] if summary else 0)
+                + (summary["segment_count"] if summary else 0)
+                * self.config.cleanup.estimated_seconds_per_conversation / 3600
+            ),
             "last_updated": summary["last_updated"] if summary else None,
             "growth_warning": bool(summary["growth_warning"]) if summary else False,
             "oldest_segment": oldest["oldest"] if oldest and oldest["oldest"] else None,

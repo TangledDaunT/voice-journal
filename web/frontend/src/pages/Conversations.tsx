@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Search, Calendar, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchConversations, searchConversations, Conversation } from '@/lib/api'
+import { fetchConversations, fetchConversation, searchConversations, Conversation } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -11,12 +11,12 @@ import { ConversationCard } from '@/components/conversations/ConversationCard'
 
 export function Conversations() {
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [selectedDate, setSelectedDate] = useState<string>('')
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null)
 
   const { data: conversations, isLoading } = useQuery({
     queryKey: ['conversations', selectedDate],
-    queryFn: () => fetchConversations(selectedDate, 100),
+    queryFn: () => fetchConversations(selectedDate || undefined, 200),
   })
 
   const { data: searchResults, isLoading: searchLoading } = useQuery({
@@ -95,7 +95,7 @@ export function Conversations() {
             <ConversationCard
               key={conv.conversation_id}
               conversation={conv}
-              onClick={() => setSelectedConv(conv)}
+              onClick={async () => setSelectedConv(await fetchConversation(conv.conversation_id))}
             />
           ))}
         </motion.div>
@@ -136,13 +136,21 @@ export function Conversations() {
                 )}
 
                 {/* Transcript */}
-                {selectedConv.transcript && (
+                {(selectedConv.cleaned_transcript || selectedConv.transcript) && (
                   <div>
-                    <h4 className="mb-2 text-sm font-medium text-muted-foreground">Transcript</h4>
+                    <h4 className="mb-2 text-sm font-medium text-muted-foreground">Cleaned Transcript</h4>
                     <pre className="whitespace-pre-wrap rounded-lg bg-muted/30 p-4 font-mono text-sm">
-                      {selectedConv.transcript}
+                      {selectedConv.cleaned_transcript || selectedConv.transcript}
                     </pre>
                   </div>
+                )}
+                {(selectedConv.raw_transcript || selectedConv.transcript) && (
+                  <details>
+                    <summary className="cursor-pointer text-sm font-medium text-muted-foreground">Raw Transcript</summary>
+                    <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-muted/30 p-4 font-mono text-sm">
+                      {selectedConv.raw_transcript || selectedConv.transcript}
+                    </pre>
+                  </details>
                 )}
               </div>
             </>

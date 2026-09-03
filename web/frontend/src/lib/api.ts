@@ -14,6 +14,8 @@ export interface Conversation {
   languages: string[]
   summary: string | null
   transcript?: string
+  raw_transcript?: string
+  cleaned_transcript?: string
 }
 
 export interface Stats {

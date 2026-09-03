@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import sqlite3
 import subprocess
+from config.settings import Config
 
 app = Flask(__name__, static_folder='dist', static_url_path='')
 CORS(app)
@@ -26,6 +27,7 @@ BASE_DIR = Path(__file__).parent.parent
 DB_PATH = BASE_DIR / "data" / "voice_journal.db"
 VAULT_PATH = BASE_DIR / "obsidian_vault"
 CONFIG_PATH = BASE_DIR / "config" / "default_config.yaml"
+APP_CONFIG = Config.from_yaml(str(CONFIG_PATH)) if CONFIG_PATH.exists() else Config()
 
 # Real-time update subscribers
 subscribers = []
@@ -152,8 +154,8 @@ def get_stats():
 
 @app.route('/api/conversations')
 def get_conversations():
-    """Get recent conversations."""
-    date_filter = request.args.get('date', datetime.now().strftime("%Y-%m-%d"))
+    """Get conversations, optionally filtered by date."""
+    date_filter = request.args.get('date')
     limit = min(int(request.args.get('limit', 50)), 200)
 
     conn = get_db_connection()
@@ -165,10 +167,10 @@ def get_conversations():
             duration_seconds, participants, source_type,
             is_shivangi_conversation, quality, languages, summary
         FROM conversations
-        WHERE date = ?
+        WHERE (? IS NULL OR date = ?)
         ORDER BY start_time DESC
         LIMIT ?
-    """, (date_filter, limit))
+    """, (date_filter, date_filter, limit))
 
     rows = cursor.fetchall()
 
@@ -186,7 +188,9 @@ def get_conversations():
             "is_shivangi_conversation": bool(row["is_shivangi_conversation"]),
             "quality": row["quality"],
             "languages": json.loads(row["languages"]) if row["languages"] else [],
-            "summary": row["summary"] or ""
+            "summary": row["summary"] or "",
+            "raw_transcript": row["raw_transcript"] or row["transcript"] or "",
+            "cleaned_transcript": row["cleaned_transcript"] or row["transcript"] or ""
         })
 
     conn.close()
@@ -222,7 +226,9 @@ def get_conversation(conv_id):
         "quality": row["quality"],
         "languages": json.loads(row["languages"]) if row["languages"] else [],
         "summary": row["summary"],
-        "transcript": row["transcript"]
+        "transcript": row["transcript"],
+        "raw_transcript": row["raw_transcript"] or row["transcript"] or "",
+        "cleaned_transcript": row["cleaned_transcript"] or row["transcript"] or ""
     })
 
 
@@ -375,13 +381,18 @@ def get_backlog():
         # Estimate hours (assuming avg 30s per segment)
         total_segments = staging_count + backlog_count
         hours_queued = round(total_segments * 30 / 3600, 2)
+        cleanup_hours = round(
+            total_segments * APP_CONFIG.cleanup.estimated_seconds_per_conversation / 3600, 2
+        )
 
         return jsonify({
             "total_queued_hours": hours_queued,
             "segments_pending": total_segments,
             "staging_segments": staging_count,
             "backlog_segments": backlog_count,
-            "overflow_threshold": 24.0
+            "overflow_threshold": APP_CONFIG.scheduler.backlog_overflow_hours,
+            "estimated_cleanup_hours": cleanup_hours,
+            "estimated_processing_hours": round(hours_queued + cleanup_hours, 2)
         })
     except Exception as e:
         return jsonify({

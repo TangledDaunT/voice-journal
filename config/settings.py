@@ -6,7 +6,7 @@ Handles loading, validating, and accessing configuration.
 import os
 import json
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 
 import yaml
@@ -45,14 +45,14 @@ class SpeakerConfig(BaseModel):
 
 
 class ASRConfig(BaseModel):
-    model_size: str = Field(default="Hub84/faster-whisper-hinglish-prime")
+    model_size: str = Field(default="large-v3")
     compute_type: str = Field(default="int8")
     device: str = Field(default="cpu")
     language: Optional[str] = None
     beam_size: int = Field(default=5, ge=1)
     vad_filter: bool = True
     condition_on_previous_text: bool = False
-    initial_prompt: Optional[str] = None
+    initial_prompt: Optional[str] = "Shreyansh, Shivangi. Use only Hindi and English."
 
     # Confidence thresholds for gating
     no_speech_prob_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
@@ -88,6 +88,17 @@ class PreprocessingConfig(BaseModel):
     denoising_method: str = Field(default="noisereduce")
     gain_normalization: bool = True
     target_db: float = Field(default=-20.0)
+
+
+class CleanupConfig(BaseModel):
+    """Configuration for conservative post-ASR transcript cleanup."""
+    enabled: bool = True
+    custom_dictionary: List[str] = Field(default_factory=lambda: [
+        "Shreyansh", "Shivangi", "Cupid", "MindBridge", "OpenClaw", "LegalLawAdvisor"
+    ])
+    timeout_seconds: int = Field(default=45, ge=5)
+    max_tokens: int = Field(default=1200, ge=100)
+    estimated_seconds_per_conversation: int = Field(default=30, ge=0)
 
 
 class SchedulerConfig(BaseModel):
@@ -168,6 +179,7 @@ class Config(BaseSettings):
     asr: ASRConfig = Field(default_factory=ASRConfig)
     segment_merging: SegmentMergingConfig = Field(default_factory=SegmentMergingConfig)
     preprocessing: PreprocessingConfig = Field(default_factory=PreprocessingConfig)
+    cleanup: CleanupConfig = Field(default_factory=CleanupConfig)
     conversation: ConversationConfig = Field(default_factory=ConversationConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)

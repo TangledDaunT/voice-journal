@@ -85,7 +85,8 @@ class ObsidianWriter:
     def write_conversation_note(
         self,
         conversation: ConversationUnit,
-        classification: ClassificationResult
+        classification: ClassificationResult,
+        cleaned_transcript: Optional[str] = None
     ) -> Path:
         """
         Write a conversation note to the vault.
@@ -124,7 +125,9 @@ class ObsidianWriter:
         }
 
         # Build note content
-        content = self._format_conversation_note(frontmatter, classification, conversation)
+        content = self._format_conversation_note(
+            frontmatter, classification, conversation, cleaned_transcript
+        )
 
         # Write file
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -147,7 +150,8 @@ class ObsidianWriter:
         self,
         frontmatter: Dict,
         classification: ClassificationResult,
-        conversation: ConversationUnit
+        conversation: ConversationUnit,
+        cleaned_transcript: Optional[str] = None
     ) -> str:
         """Format the full markdown content for a conversation note."""
         # Check for low confidence segments
@@ -180,21 +184,23 @@ class ObsidianWriter:
             body_parts.append("> ⚠️ **Low confidence segments detected.** ")
             body_parts.append("Some transcript lines may need review. Flagged lines are marked with ⚠️\n")
 
-        # Transcript with confidence markers
-        body_parts.append("## Transcript\n\n")
+        cleaned = cleaned_transcript or conversation.full_transcript
+        cleaned_lines = cleaned.splitlines() or [cleaned]
+        for index, seg in enumerate(conversation.transcript_segments):
+            if getattr(seg, 'low_confidence', False):
+                target = min(index, len(cleaned_lines) - 1)
+                if "⚠️" not in cleaned_lines[target]:
+                    cleaned_lines[target] += " ⚠️"
+
+        body_parts.append("## Cleaned Transcript\n\n")
         body_parts.append("```transcript\n")
-
-        # Format each segment with confidence marker if needed
-        for seg in conversation.transcript_segments:
-            timestamp = seg.start_time.strftime("%H:%M:%S")
-            speaker = seg.speaker.capitalize()
-
-            # Check for low confidence marker
-            marker = " ⚠️" if getattr(seg, 'low_confidence', False) else ""
-
-            body_parts.append(f"[{timestamp}] {speaker}: {seg.text}{marker}\n")
-
+        body_parts.extend(f"{line}\n" for line in cleaned_lines)
         body_parts.append("```\n")
+
+        body_parts.append("\n<details>\n<summary>Raw Transcript</summary>\n\n")
+        body_parts.append("```transcript\n")
+        body_parts.append(conversation.full_transcript + "\n")
+        body_parts.append("```\n\n</details>\n")
 
         # Word count
         body_parts.append(f"\n---\n*{conversation.total_word_count} words, {int(conversation.duration_seconds)}s*")
