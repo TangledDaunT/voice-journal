@@ -426,7 +426,7 @@ class BatchProcessor:
         try:
             subprocess.run(
                 [ffmpeg, "-y", "-f", "f32le", "-ar", str(sample_rate), "-ac", "1", "-i", "pipe:0",
-                 "-c:a", "libopus", "-b:a", "32k", str(output_path)],
+                 "-c:a", "libopus", "-b:a", f"{self.config.dashboard.audio_bitrate_kbps}k", str(output_path)],
                 input=audio.tobytes(), check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
             )
             log_stage("AudioCache", f"Cached conversation audio: {output_path}")

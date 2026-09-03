@@ -167,6 +167,7 @@ class DashboardConfig(BaseModel):
     """Retention policy for conversation audio playable from the dashboard."""
     audio_cache_path: str = "./audio_cache"
     audio_retention_days: int = Field(default=30, ge=0)
+    audio_bitrate_kbps: int = Field(default=32, ge=16)
 
 
 class DaemonConfig(BaseModel):

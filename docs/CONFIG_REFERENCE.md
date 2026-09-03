@@ -81,6 +81,7 @@ cleanup:
 dashboard:
   audio_cache_path: "./audio_cache"
   audio_retention_days: 30
+  audio_bitrate_kbps: 32
 ```
 
 ### Scheduler

@@ -713,6 +713,10 @@ class BacklogTracker:
                 + (summary["segment_count"] if summary else 0)
                 * self.config.cleanup.estimated_seconds_per_conversation / 3600
             ),
+            "estimated_audio_cache_mb": (
+                (summary["total_hours"] if summary else 0)
+                * self.config.dashboard.audio_bitrate_kbps * 0.45
+            ),
             "last_updated": summary["last_updated"] if summary else None,
             "growth_warning": bool(summary["growth_warning"]) if summary else False,
             "oldest_segment": oldest["oldest"] if oldest and oldest["oldest"] else None,

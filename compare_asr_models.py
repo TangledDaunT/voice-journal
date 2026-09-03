@@ -77,10 +77,17 @@ def main() -> None:
     parser.add_argument("clips", type=Path, help="Folder containing real audio clips")
     parser.add_argument("--compute-type", default="int8")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--denoising-method",
+        choices=("noisereduce", "rnnoise"),
+        default="noisereduce",
+        help="Denoising backend to evaluate (run once per backend for A/B testing)",
+    )
     parser.add_argument("--config", type=Path, help="Optional YAML config for ASR settings")
     args = parser.parse_args()
 
     config = Config.from_yaml(str(args.config)) if args.config else Config()
+    config.preprocessing.denoising_method = args.denoising_method
     clips = list(find_clips(args.clips))
     if not clips:
         parser.error(f"No supported audio clips found in {args.clips}")
