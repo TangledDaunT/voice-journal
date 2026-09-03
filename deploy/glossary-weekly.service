@@ -1,0 +1,14 @@
+[Unit]
+Description=Run Hindi Glossary Weekly Job
+After=network.target
+
+[Service]
+Type=oneshot
+User=shreyansh
+WorkingDirectory=/home/shreyansh/voice_journal_src
+ExecStart=/home/shreyansh/voice_journal_src/venv/bin/python3 scripts/run_glossary_weekly.py
+StandardOutput=append:/home/shreyansh/voice_journal_src/logs/glossary_job.log
+StandardError=append:/home/shreyansh/voice_journal_src/logs/glossary_job.log
+
+[Install]
+WantedBy=multi-user.target

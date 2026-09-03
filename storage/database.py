@@ -445,6 +445,106 @@ CREATE TABLE IF NOT EXISTS backlog_summary (
 """
 
 
+# Glossary schema (for Hindi/Hinglish terms)
+SCHEMA_GLOSSARY = """
+CREATE TABLE IF NOT EXISTS glossary_terms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    term_devanagari TEXT NOT NULL,
+    term_romanized TEXT NOT NULL UNIQUE,
+    first_seen_date TEXT NOT NULL,
+    occurrence_count INTEGER DEFAULT 1,
+    last_seen_date TEXT NOT NULL,
+    inferred_meaning TEXT,
+    example_transcript TEXT,
+    conversation_ids TEXT,  -- JSON array
+    is_validated INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_glossary_romanized ON glossary_terms(term_romanized);
+CREATE INDEX IF NOT EXISTS idx_glossary_first_seen ON glossary_terms(first_seen_date);
+"""
+
+
+class GlossaryStore:
+    """
+    Manages glossary term storage and retrieval.
+    """
+
+    def __init__(self, config: Config):
+        self.config = config
+        self.db_path = Path(config.database.path)
+        self._init_glossary_db()
+
+    def _init_glossary_db(self):
+        """Initialize glossary tables."""
+        conn = sqlite3.connect(self.db_path)
+        conn.executescript(SCHEMA_GLOSSARY)
+        conn.commit()
+        conn.close()
+        log_stage("SQLite", "Glossary tables initialized")
+
+    def insert_term(self, term_data: dict) -> int:
+        """Insert a glossary term."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO glossary_terms (
+                term_devanagari, term_romanized, first_seen_date,
+                occurrence_count, last_seen_date, inferred_meaning,
+                example_transcript, conversation_ids, is_validated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+        """, (
+            term_data['term_devanagari'],
+            term_data['term_romanized'],
+            term_data['first_seen_date'],
+            term_data['occurrence_count'],
+            term_data['last_seen_date'],
+            term_data.get('inferred_meaning', ''),
+            term_data.get('example_transcript', ''),
+            json.dumps(term_data.get('conversation_ids', []))
+        ))
+
+        row_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+
+        return row_id
+
+    def get_all_terms(self) -> List[Dict]:
+        """Get all glossary terms."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM glossary_terms
+            ORDER BY occurrence_count DESC, term_romanized ASC
+        """)
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in rows]
+
+    def get_term(self, term_romanized: str) -> Optional[Dict]:
+        """Get a specific term by romanized form."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM glossary_terms WHERE term_romanized = ?
+        """, (term_romanized,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        return dict(row) if row else None
+
+
 class BacklogTracker:
     """
     Tracks backlog depth and processing progress.

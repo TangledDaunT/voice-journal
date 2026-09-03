@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly Hindi Glossary Extractor
+Documentation=https://github.com/your-voice-journal/docs
+
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

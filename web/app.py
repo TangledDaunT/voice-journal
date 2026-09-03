@@ -1087,6 +1087,129 @@ def set_output_device():
         return jsonify({"success": False, "error": str(e)})
 
 
+# ============================================================================
+# GLOSSARY ENDPOINTS
+# ============================================================================
+
+@app.route('/api/glossary')
+def get_glossary():
+    """Get all glossary terms."""
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM glossary_terms
+            ORDER BY occurrence_count DESC, term_romanized ASC
+        """)
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        terms = []
+        for row in rows:
+            terms.append({
+                "id": row['id'],
+                "term_devanagari": row['term_devanagari'],
+                "term_romanized": row['term_romanized'],
+                "first_seen_date": row['first_seen_date'],
+                "occurrence_count": row['occurrence_count'],
+                "last_seen_date": row['last_seen_date'],
+                "inferred_meaning": row['inferred_meaning'],
+                "example_transcript": row['example_transcript'],
+                "is_validated": bool(row['is_validated'])
+            })
+
+        return jsonify(terms)
+    except Exception as e:
+        return jsonify({"error": str(e), "terms": []})
+
+
+@app.route('/api/glossary/search')
+def search_glossary():
+    """Search glossary terms."""
+    query = request.args.get('q', '').lower()
+    if not query:
+        return jsonify([])
+
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM glossary_terms
+            WHERE LOWER(term_devanagari) LIKE ?
+               OR LOWER(term_romanized) LIKE ?
+               OR LOWER(inferred_meaning) LIKE ?
+            ORDER BY occurrence_count DESC
+            LIMIT 20
+        """, (f'%{query}%', f'%{query}%', f'%{query}%'))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return jsonify([dict(row) for row in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+@app.route('/api/glossary/run_weekly', methods=['POST'])
+def trigger_weekly_job():
+    """Manually trigger weekly glossary job."""
+    try:
+        import subprocess
+
+        # Run job in background
+        subprocess.Popen(
+            ['python3', 'scripts/run_glossary_weekly.py'],
+            cwd=str(BASE_DIR),
+            stdout=open(str(BASE_DIR / 'logs' / 'glossary_job.log'), 'w'),
+            stderr=subprocess.STDOUT
+        )
+
+        return jsonify({
+            "success": True,
+            "message": "Glossary job started in background"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/glossary/stats')
+def glossary_stats():
+    """Get glossary statistics."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM glossary_terms")
+        total = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT SUM(occurrence_count) FROM glossary_terms
+        """)
+        total_occurrences = cursor.fetchone()[0] or 0
+
+        cursor.execute("""
+            SELECT COUNT(*) FROM glossary_terms
+            WHERE is_validated = 1
+        """)
+        validated = cursor.fetchone()[0]
+
+        conn.close()
+
+        return jsonify({
+            "total_terms": total,
+            "total_occurrences": total_occurrences,
+            "validated_terms": validated,
+            "pending_validation": total - validated
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 # Helper functions for audio analysis
 def _get_peak_frequency(audio, sample_rate):
     """Get the dominant frequency in the audio."""
