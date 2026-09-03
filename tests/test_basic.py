@@ -17,7 +17,7 @@ class TestConfig:
         """Test default configuration creation."""
         config = Config()
         assert config.audio.sample_rate == 16000
-        assert config.asr.model_size == "small"
+        assert config.asr.model_size == "Hub84/faster-whisper-hinglish-prime"
         assert config.conversation.gap_seconds == 90.0
 
     def test_vad_threshold_bounds(self):
