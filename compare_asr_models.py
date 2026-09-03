@@ -8,6 +8,7 @@ intentionally a readable comparison report, not an automated accuracy score.
 """
 
 import argparse
+import gc
 from pathlib import Path
 from typing import Iterable
 
@@ -82,10 +83,6 @@ def main() -> None:
         parser.error(f"No supported audio clips found in {args.clips}")
 
     preprocessor = AudioPreprocessor(config)
-    models = {
-        OLD_MODEL: WhisperModel(OLD_MODEL, device=args.device, compute_type=args.compute_type),
-        NEW_MODEL: WhisperModel(NEW_MODEL, device=args.device, compute_type=args.compute_type),
-    }
 
     for clip in clips:
         raw_audio = load_audio(clip, config.audio.sample_rate)
@@ -94,8 +91,12 @@ def main() -> None:
             preprocessor.enable_denoising = denoise
             processed = preprocessor.preprocess(raw_audio, config.audio.sample_rate).audio
             print(f"\n--- denoise={'on' if denoise else 'off'} ---")
-            for model_name, model in models.items():
-                print(f"{model_name}: {format_segments(transcribe(model, processed, config))}")
+            for model_name in (OLD_MODEL, NEW_MODEL):
+                print(f"Loading {model_name}...", flush=True)
+                model = WhisperModel(model_name, device=args.device, compute_type=args.compute_type)
+                print(f"{model_name}: {format_segments(transcribe(model, processed, config))}", flush=True)
+                del model
+                gc.collect()
 
 
 if __name__ == "__main__":
