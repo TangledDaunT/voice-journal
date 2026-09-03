@@ -166,6 +166,19 @@ class SQLiteStore:
                         DROP TABLE IF EXISTS conversations_fts;
                     """)
                     cursor.executescript(SCHEMA_FTS)
+                try:
+                    cursor.execute(
+                        "INSERT INTO conversations_fts(conversations_fts) VALUES ('rebuild')"
+                    )
+                except sqlite3.DatabaseError:
+                    logger.warning("Recreating malformed conversations FTS index")
+                    cursor.executescript("""
+                        DROP TRIGGER IF EXISTS conversations_ai;
+                        DROP TRIGGER IF EXISTS conversations_ad;
+                        DROP TRIGGER IF EXISTS conversations_au;
+                        DROP TABLE IF EXISTS conversations_fts;
+                    """)
+                    cursor.executescript(SCHEMA_FTS)
                     cursor.execute(
                         "INSERT INTO conversations_fts(conversations_fts) VALUES ('rebuild')"
                     )
