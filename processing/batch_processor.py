@@ -148,6 +148,8 @@ class StagingQueue:
     def load_segment_audio(self, segment: StagedSegment) -> SpeechSegment:
         """Load audio for a staged segment."""
         audio = np.load(segment.audio_path)
+        if audio.ndim == 2:
+            audio = audio[:, 0] if audio.shape[1] == 1 else audio.mean(axis=1)
 
         return SpeechSegment(
             start_time=segment.start_time,
