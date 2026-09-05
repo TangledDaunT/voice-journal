@@ -166,7 +166,16 @@ class AudioPreprocessor:
                 if not frames:
                     return audio
                 denoised = np.concatenate(frames, axis=1).reshape(-1)
-                return (denoised.astype(np.float32) / 32767.0)[:len(audio)]
+                # Ensure output matches input length (handle frame boundary alignment)
+                denoised_float = (denoised.astype(np.float32) / 32767.0)
+                if len(denoised_float) > len(audio):
+                    # Truncate if denoised is longer
+                    denoised_float = denoised_float[:len(audio)]
+                elif len(denoised_float) < len(audio):
+                    # Pad with zeros if denoised is shorter
+                    padding = np.zeros(len(audio) - len(denoised_float), dtype=np.float32)
+                    denoised_float = np.concatenate([denoised_float, padding])
+                return denoised_float
             except Exception as e:
                 logger.error(f"RNNoise failed: {e}")
                 return audio

@@ -9,6 +9,7 @@ import time
 import json
 import threading
 from queue import Queue
+from glob import glob as glob_files
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, render_template, jsonify, request, send_from_directory, Response, send_file
@@ -209,8 +210,8 @@ def get_conversations():
             "languages": json.loads(row["languages"]) if row["languages"] else [],
             "summary": row["summary"] or "",
             "raw_transcript": row["raw_transcript"] or row["transcript"] or "",
-            "cleaned_transcript": row["cleaned_transcript"] or row["transcript"] or ""
-            ,"audio_url": audio_url_for(row)
+            "cleaned_transcript": row["cleaned_transcript"] or row["transcript"] or "",
+            "audio_url": audio_url_for(row)
         })
 
     conn.close()
@@ -248,8 +249,8 @@ def get_conversation(conv_id):
         "summary": row["summary"],
         "transcript": row["transcript"],
         "raw_transcript": row["raw_transcript"] or row["transcript"] or "",
-        "cleaned_transcript": row["cleaned_transcript"] or row["transcript"] or ""
-        ,"audio_url": audio_url_for(row)
+        "cleaned_transcript": row["cleaned_transcript"] or row["transcript"] or "",
+        "audio_url": audio_url_for(row)
     })
 
 
@@ -393,35 +394,57 @@ def get_backlog():
     """Get current batch processing backlog status."""
     try:
         # Check staging queue
-        staging_path = BASE_DIR / "audio_clips" / "staging"
+        staging_path = Path(APP_CONFIG.audio.audio_storage_path) / "staging"
         staging_count = len(list(staging_path.glob("*.json"))) if staging_path.exists() else 0
 
-        # Check backlog directory
-        backlog_path = BASE_DIR / "backlog"
-        backlog_count = len(list(backlog_path.glob("*.json"))) if backlog_path.exists() else 0
-
         # Estimate hours (assuming avg 30s per segment)
-        total_segments = staging_count + backlog_count
+        total_segments = staging_count
         hours_queued = round(total_segments * 30 / 3600, 2)
-        cleanup_hours = round(
-            total_segments * APP_CONFIG.cleanup.estimated_seconds_per_conversation / 3600, 2
-        )
 
         return jsonify({
             "total_queued_hours": hours_queued,
             "segments_pending": total_segments,
             "staging_segments": staging_count,
-            "backlog_segments": backlog_count,
-            "overflow_threshold": APP_CONFIG.scheduler.backlog_overflow_hours,
-            "estimated_cleanup_hours": cleanup_hours,
-            "estimated_processing_hours": round(hours_queued + cleanup_hours, 2)
+            "overflow_threshold": getattr(APP_CONFIG.scheduler, 'backlog_overflow_hours', 24.0),
+            "status": "operational" if total_segments < 1000 else "backlog_high"
         })
     except Exception as e:
         return jsonify({
             "error": str(e),
             "total_queued_hours": 0,
-            "segments_pending": 0
+            "segments_pending": 0,
+            "status": "error"
         })
+
+
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint."""
+    try:
+        # Check database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM conversations")
+        count = cursor.fetchone()[0]
+        conn.close()
+
+        # Check staging dir
+        staging_path = Path(APP_CONFIG.audio.audio_storage_path) / "staging"
+        staging_count = len(list(staging_path.glob("*.json"))) if staging_path.exists() else 0
+
+        return jsonify({
+            "status": "healthy",
+            "database": "connected",
+            "total_conversations": count,
+            "staging_segments": staging_count,
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 
 # Serve Obsidian notes

@@ -244,9 +244,12 @@ class SegmentMerger:
             offset_seconds = (segment.start_time - start_time).total_seconds()
             offset_samples = int(offset_seconds * sample_rate)
 
-            # Copy segment audio
+            # Copy segment audio (handle edge cases where sizes don't align perfectly)
             segment_samples = len(audio)
-            merged[offset_samples:offset_samples + segment_samples] = audio
+            end_samples = min(offset_samples + segment_samples, total_samples)
+            actual_samples = end_samples - offset_samples
+            if actual_samples > 0 and offset_samples >= 0:
+                merged[offset_samples:end_samples] = audio[:actual_samples]
 
         return merged
 
