@@ -43,15 +43,20 @@ class TestAudioPreprocessor:
         config.preprocessing.target_db = -20.0
         preprocessor = AudioPreprocessor(config)
 
-        # Create very quiet audio
+        # Create audio with RMS around -30 dB (should be boosted to -20 dB)
+        # For a sine wave, amplitude = 10^(dB/20)
+        # -30 dB -> amplitude = 10^(-30/20) = 0.03162
         sample_rate = 16000
-        audio = np.random.randn(16000).astype(np.float32) * 0.001
+        # Create a signal that will have RMS approx -30 dB
+        audio = np.random.randn(16000).astype(np.float32) * 0.03162
 
         result = preprocessor.preprocess(audio, sample_rate)
 
         assert result.normalized == True
-        # Processed audio should be louder
+        # Processed audio should be louder (closer to target_db)
         assert result.processed_rms_db > result.original_rms_db
+        # Should be close to target_db (-20.0)
+        assert abs(result.processed_rms_db - (-20.0)) < 1.0
 
     def test_mono_conversion(self):
         """Test stereo to mono conversion."""

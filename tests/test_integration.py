@@ -64,10 +64,10 @@ class TestSegmentMergeIntegration:
         now = datetime.now()
         sample_rate = 16000
 
-        # Create segments out of order
+        # Create two segments with a small gap (1s) so they merge
         seg1 = SpeechSegment(
-            start_time=now + timedelta(seconds=10),
-            end_time=now + timedelta(seconds=15),
+            start_time=now + timedelta(seconds=6),
+            end_time=now + timedelta(seconds=11),
             audio=np.ones(5 * sample_rate, dtype=np.float32),
             sample_rate=sample_rate
         )
@@ -81,6 +81,10 @@ class TestSegmentMergeIntegration:
 
         merged = merger.add_segments_batch([seg1, seg2])
 
-        # Should process in chronological order
-        assert merged[0].start_time == now
-        assert merged[0].source_segments[0].start_time < merged[0].source_segments[1].start_time
+        # With a gap of 1s (< merge_gap_seconds=2.5s), they should merge into one unit
+        assert len(merged) == 1
+        # The merged unit should have two source segments in chronological order (seg2 then seg1)
+        assert len(merged[0].source_segments) == 2
+        # First in time should be seg2 (starts at now)
+        assert merged[0].source_segments[0].start_time == now
+        assert merged[0].source_segments[1].start_time == now + timedelta(seconds=6)

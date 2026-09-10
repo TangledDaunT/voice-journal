@@ -70,15 +70,15 @@ class ObsidianWriter:
         """Create necessary directories."""
         self.vault_path.mkdir(parents=True, exist_ok=True)
         (self.vault_path / self.daily_dir).mkdir(parents=True, exist_ok=True)
+        (self.vault_path / self.conversation_dir).mkdir(parents=True, exist_ok=True)
 
     def _create_slug(self, summary: str, max_length: int = 40) -> str:
         """Create a URL-safe slug from summary."""
         if not summary:
             return "conversation"
 
-        # Use first part of summary before any punctuation
-        text = summary.split('.')[0].split(',')[0].strip()
-        slug = slugify(text, max_length=max_length)
+        # Slugify the entire summary
+        slug = slugify(summary, max_length=max_length)
 
         return slug if slug else "conversation"
 

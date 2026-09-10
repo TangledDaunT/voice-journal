@@ -107,6 +107,7 @@ class TestBatchScheduler:
 
     def test_batch_chunk_size_overnight(self, config):
         """Test batch chunk size calculation for overnight."""
+        config.scheduler.process_all_day = False  # Ensure we test the overnight window
         mock_processor = Mock()
         mock_processor.staging_queue = Mock()
         mock_processor.staging_queue.get_backlog_status.return_value = {"total_hours": 1.0}

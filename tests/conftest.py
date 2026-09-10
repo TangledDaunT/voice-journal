@@ -2,9 +2,14 @@
 
 import pytest
 import tempfile
+import sys
+import os
 from pathlib import Path
 from datetime import datetime, timedelta
 import numpy as np
+
+# Add the project root to sys so we can import config and vad
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from config.settings import Config
 from vad.silero_vad import SpeechSegment

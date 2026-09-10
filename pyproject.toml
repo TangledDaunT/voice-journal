@@ -43,7 +43,7 @@ dependencies = [
     "noisereduce>=3.0.0",
     "pyrnnoise>=0.4.3",
     "psutil>=5.9.0",
-    "resemblyzer>=1.0.0",
+    "resemblyzer>=0.1.4,<0.2.0",
 ]
 
 [project.optional-dependencies]

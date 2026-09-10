@@ -49,6 +49,6 @@ class TestObsidianWriter:
         """Test slug creation."""
         writer = ObsidianWriter(config)
 
-        assert writer._create_slug("This is a test summary") == "this-is-a-test-summ"
+        assert writer._create_slug("This is a test summary") == "this-is-a-test-summary"
         assert writer._create_slug("Hello, world!") == "hello-world"
         assert writer._create_slug("") == "conversation"

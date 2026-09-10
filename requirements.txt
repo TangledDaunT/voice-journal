@@ -20,7 +20,7 @@ psutil>=5.9.0  # For CPU monitoring and idle detection
 
 # Speaker Identification (Fix 6)
 # Option 1: Lightweight (recommended)
-resemblyzer>=1.0.0
+resemblyzer>=0.1.4,<0.2.0
 
 # Option 2: More accurate but heavier
 # speechbrain>=0.5.16
