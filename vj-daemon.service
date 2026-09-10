@@ -5,18 +5,14 @@ After=network.target sound.target
 [Service]
 Type=simple
 WorkingDirectory=/home/shreyansh/voice_journal_src
-ExecStart=/home/shreyansh/voice_journal_src/venv/bin/python daemon_v2.py
+ExecStart=/home/shreyansh/voice_journal_src/venv/bin/python3 daemon_v2.py --config config/default_config.yaml
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-
-# Environment
-Environment="PYTHONUNBUFFERED=1"
-
-# Resource limits
-MemoryMax=8G
-CPUQuota=200%
+Environment=PYTHONUNBUFFERED=1
+MemoryMax=4G
+CPUQuota=150%
 
 [Install]
 WantedBy=default.target

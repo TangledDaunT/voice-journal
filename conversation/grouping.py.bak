@@ -219,12 +219,23 @@ class ConversationGrouper:
         self,
         segments: List[TranscriptSegment]
     ) -> List[ConversationUnit]:
-        """Feed a batch of segments into the ongoing grouping state (state persists across calls)."""
+        """
+        Group a batch of transcript segments into conversations.
+        This is for batch processing (e.g., testing with pre-recorded audio).
+        """
         conversations = []
+        self.pending_segments = []
+        self.last_segment_time = None
+
         for segment in segments:
             conv = self.add_segment(segment)
             if conv:
                 conversations.append(conv)
+
+        # Don't forget the last conversation
+        conv = self.flush()
+        if conv:
+            conversations.append(conv)
 
         return conversations
 

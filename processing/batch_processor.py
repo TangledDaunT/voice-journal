@@ -348,6 +348,14 @@ class BatchProcessor:
         log_stage("Batch", "Grouping conversations...")
         conversations = self._conversation_grouper.group_segments(transcript_segments)
 
+        # Only force-close trailing conversation if backlog is drained (genuine silence gap)
+        backlog_status = self.staging_queue.get_backlog_status()
+        if backlog_status.get("total_hours", 0.0) == 0.0:
+            # No more staged audio waiting -- genuine gap, safe to close out the trailing conversation
+            trailing = self._conversation_grouper.flush()
+            if trailing:
+                conversations.append(trailing)
+
         # Process each conversation (LLM + output)
         conversations_created = 0
         errors = 0

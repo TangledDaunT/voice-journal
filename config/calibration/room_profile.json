@@ -1,0 +1,10 @@
+{
+  "recorded_at": "2026-09-09T14:03:58.294807",
+  "duration_seconds": 5,
+  "sample_rate": 16000,
+  "rms_level": 0.0,
+  "max_amplitude": 0.0,
+  "peak_frequency_hz": 0.0,
+  "recommended_vad_threshold": 0.3,
+  "noise_floor_db": -60
+}
