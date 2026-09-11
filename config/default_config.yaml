@@ -13,7 +13,7 @@ audio:
 # VAD (Stage 2) - Runs near-real-time, segments stored for batch processing
 vad:
   model_path: "./models/silero_vad.onnx"
-  threshold: 0.6
+  threshold: 0.5
   min_segment_duration: 0.5
   silence_padding: 0.3
   max_segment_duration: 30.0
@@ -41,7 +41,7 @@ asr:
   initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
 
   # Confidence thresholds for flagging uncertain segments
-  no_speech_prob_threshold: 0.6
+  no_speech_prob_threshold: 0.5
   avg_logprob_threshold: -1.0
 
 # Segment Merging (new stage between VAD and ASR)
