@@ -1,548 +1,254 @@
-# Voice Journal - Local, Always-On Voice Journal for Obsidian
+# Voice Journal - Dockerized Day-wise Audio Archive & Transcript System
 
-A fully local background daemon that continuously listens through your microphone, detects speech, transcribes it, identifies speakers, classifies conversations, and writes structured notes to an Obsidian vault.
+A simplified, Dockerized voice journal system that captures audio, performs VAD, stores segments on an external drive, and provides batch transcription with a web dashboard for playback and search.
 
-**Key Features:**
-- **100% local** - No cloud APIs, no external network calls
-- **Hindi + English code-switching** support
-- **Speaker identification** for Shreyansh and Shivangi (embedding-based)
-- **Automatic conversation detection** and grouping
-- **LLM-powered classification** (good/neutral/tense quality)
-- **Structured Obsidian notes** with frontmatter
-- **SQLite FTS5 search index** for fast querying
-- **Batch processing** - Accuracy over speed, no real-time constraint
+## Key Features
 
----
+- **Audio Capture**: Continuous microphone input with Silero VAD for speech detection
+- **Day-wise Organization**: All data organized by local date (Asia/Kolkata)
+- **External Drive Storage**: Automatically detects and uses 1TB external drive for all storage
+- **Batch Processing**: Efficient transcription using faster-whisper with optional speaker gender tagging
+- **Web Dashboard**: Flask-based interface for browsing, playing, and searching recordings
+- **Dockerized**: Easy deployment with docker-compose, separated daemon and web services
+- **Migration Script**: One-time migration tool to move existing data to new structure
 
-## Table of Contents
+## Storage Structure
 
-1. [Prerequisites](#prerequisites)
-2. [Installation](#installation)
-3. [Configuration](#configuration)
-4. [Calibration](#calibration)
-5. [Usage](#usage)
-6. [Architecture](#architecture)
-7. [Performance](#performance)
-8. [Known Limitations](#known-limitations)
-9. [Troubleshooting](#troubleshooting)
-
----
+All data is stored under `DATA_ROOT/voice-journal/`:
+```
+audio/YYYY-MM-DD/segments/HHMMSS.opus   (VAD speech segments)
+audio/YYYY-MM-DD/full_day.opus          (concatenated day recording)
+transcripts/YYYY-MM-DD/segments.jsonl   (per-segment: start_time, end_time, text, language, confidence, audio_path)
+transcripts/YYYY-MM-DD/full_day.txt     (entire day transcript with [HH:MM:SS] timestamps)
+db/voice_journal.db                     (SQLite database in WAL mode)
+```
 
 ## Prerequisites
 
-### System Requirements
-- **OS**: Ubuntu 24.04 (or similar Linux)
-- **CPU**: Intel i3 or equivalent (8th gen+ recommended)
-- **RAM**: 8GB minimum (16GB recommended for large-v3 model)
-- **Storage**: ~8GB for models
-- **GPU**: NOT required (CPU-only inference)
-
-### Software Dependencies
-- Python 3.10+
-- PortAudio (for audio capture)
-- Ollama (for local LLM)
-
----
+- Ubuntu 22.04+ or compatible Linux distribution
+- 1TB+ external drive (formatted as ext4 or compatible)
+- Docker and Docker Compose
+- Microphone input device
+- Approximately 2GB RAM, 2 CPU cores reserved for operation
 
 ## Installation
 
-### 1. Install System Dependencies
+### 1. Connect External Drive
+Connect your 1TB external drive to the system. The system will auto-detect it or you can manually specify the path.
 
+### 2. Clone Repository
 ```bash
-# Ubuntu/Debian
-sudo apt update
-sudo apt install -y \
-    portaudio19-dev \
-    python3-pip \
-    python3-venv \
-    ffmpeg
-
-# PortAudio for audio capture
-sudo apt install libportaudio2 libportaudiocpp0
-```
-
-### 2. Install Ollama and Pull Model
-
-```bash
-# Install Ollama
-curl -fsSL https://ollama.ai/install.sh | sh
-
-# Start Ollama service
-ollama serve &
-
-# Pull the LLM model (CPU-optimized)
-ollama pull llama3.2:3b
-```
-
-### 3. Clone and Setup Python Environment
-
-```bash
-# Clone the repository
-cd ~/Documents
 git clone https://github.com/TangledDaunT/voice-journal.git
 cd voice-journal
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Download Silero VAD model
-mkdir -p models
-wget -O models/silero_vad.onnx \
-    https://github.com/snakers4/silero-vad/raw/master/files/silero_vad.onnx
 ```
 
-### 4. Initialize Directories
-
+### 3. Configure Environment
 ```bash
-# Create required directories
-mkdir -p config
-mkdir -p logs
-mkdir -p data
-mkdir -p audio_clips/staging
-mkdir -p obsidian_vault/VoiceJournal/{Daily,Conversations}
+cp .env.example .env
+# Edit .env to set DATA_ROOT if not auto-detected, adjust resource limits, etc.
 ```
 
----
+### 4. Build and Start Services
+```bash
+./vj-control.sh start
+```
 
 ## Configuration
 
-Configuration is stored in `config/default_config.yaml`. Key settings:
+### Environment Variables (.env)
 
-### Audio Capture
-```yaml
-audio:
-  sample_rate: 16000
-  channels: 1
-  keep_audio: false  # Set to true to save audio clips
-```
+Key variables:
+- `DATA_ROOT`: Root directory for all data (auto-detected if empty)
+- Resource limits for each service (DAEMON_CPUS, WEB_CPUS, TRANSCRIBE_CPUS, etc.)
+- Audio processing parameters (sample rates, VAD thresholds, ASR settings)
+- Batch processing scheduler configuration
+- Web dashboard authentication token
 
-Dashboard conversation audio is stored separately as compressed Opus under `dashboard.audio_cache_path` and retained for `dashboard.audio_retention_days` (30 by default). This is independent of `audio.keep_audio`.
+### Docker Resource Limits
 
-### VAD (Voice Activity Detection)
-```yaml
-vad:
-  threshold: 0.6
-  min_segment_duration: 0.5  # Discard short noise
-  max_segment_duration: 30.0  # Split long segments
-```
-
-### Audio Preprocessing
-```yaml
-preprocessing:
-  enable_denoising: true
-  denoising_method: "noisereduce"  # or "rnnoise"
-  min_rms_db_for_asr: -55.0        # Skip near-silent units before Whisper
-```
-
-### Segment Merging (Fix 2)
-```yaml
-segment_merging:
-  merge_gap_seconds: 2.5  # Merge segments separated by less than this
-  min_transcription_unit_seconds: 5.0  # Don't transcribe shorter units
-  max_transcription_unit_seconds: 20.0  # Bound language-misdetection damage to a short span
-```
-
-### ASR (Transcription) - Now batch-processed
-```yaml
-asr:
-  model_size: "large-v3"  # Stock Whisper large model
-  compute_type: "int8"
-  language: null          # Auto-detect (Hindi + English)
-  vad_filter: true        # Trim silence before transcription
-  condition_on_previous_text: false  # Prevent hallucination cascade
-  beam_size: 5            # Full beam for accuracy
-  initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
-  
-  # Confidence thresholds for uncertain segments
-  no_speech_prob_threshold: 0.6
-  avg_logprob_threshold: -1.0
-  compression_ratio_threshold: 2.4
-  no_repeat_ngram_size: 3
-  repetition_penalty: 1.3
-```
-
-### Transcript Cleanup (Stage 6.5)
-```yaml
-cleanup:
-  enabled: true
-  custom_dictionary: ["Shreyansh", "Shivangi", "Cupid", "MindBridge", "OpenClaw", "LegalLawAdvisor"]
-  timeout_seconds: 45
-  max_tokens: 1200
-```
-
-### Batch Processing Scheduler
-```yaml
-scheduler:
-  cpu_idle_threshold: 30.0  # Percentage
-  guaranteed_window:
-    start_hour: 22  # 10 PM
-    end_hour: 6    # 6 AM
-  backlog_overflow_hours: 24.0  # Switch to faster model if exceeded
-  fallback_model: "distil-large-v3"
-```
-
----
-
-## Calibration
-
-### Speaker Identification (Embedding-based)
-
-Voice profiles must be calibrated before first use. The new system uses speaker embeddings (not pitch threshold).
-
-```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Record 30-60 seconds of your voice (Shreyansh)
-# Record 30-60 seconds of Shivangi's voice
-
-# Run calibration
-python -m speaker_id.embedding_speaker_id \
-    --shreyansh /path/to/your_voice.m4a \
-    --shivangi /path/to/her_voice.m4a \
-    --output config/voice_profiles.json
-```
-
-The calibration extracts speaker embeddings using Resemblyzer or SpeechBrain, which are more robust than the old pitch-threshold method.
-
----
+Resource usage can be controlled via `.env`:
+- Daemon: CPU and memory limits for capture/VAD/staging
+- Web: CPU and memory limits for dashboard
+- Transcribe: CPU and memory limits for batch transcription jobs
 
 ## Usage
 
-### Start the Daemon
-
+### Starting Services
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Start daemon (batch mode)
-python daemon_v2.py
-
-# Or with custom config
-python daemon_v2.py --config config/my_config.yaml
+./vj-control.sh start
 ```
 
-### Check Status
-
+### Stopping Services
 ```bash
-# Check backlog, processing status, and health
-python status.py
-
-# JSON format
-python status.py --format json
+./vj-control.sh stop
 ```
 
-### Run Batch Job Manually
-
+### Checking Status
 ```bash
-# Process all staged segments immediately
-python -m processing.batch_processor
-
-# Use fallback model (faster)
-python -m processing.batch_processor --fallback
+./vj-control.sh status
 ```
 
-### Mute Control
-
+### Viewing Logs
 ```bash
-# Mute
-python -m utils.mute mute
-
-# Unmute
-python -m utils.mute unmute
-
-# Check status
-python -m utils.mute status
+./vj-control.sh logs
 ```
 
----
+### Muting/Unmuting Microphone
+```bash
+./vj-control.sh mute
+./vj-control.sh unmute
+./vj-control.sh toggle
+```
+
+### Manual Transcription
+```bash
+# Transcribe specific date
+./vj-control.sh transcribe-date 2026-10-03
+
+# Or using docker compose directly
+docker compose run --rm transcribe --date 2026-10-03
+```
+
+### Accessing Web Dashboard
+Open browser to: `http://localhost:5000` (or via Tailscale)
+
+Features:
+- Browse recordings by date
+- Play full-day recordings with seek and speed controls
+- View transcripts with timestamps
+- Click transcript lines to seek to that moment in audio
+- Download audio and transcript files
+- Low-confidence segments flagged for review
+
+## Data Organization
+
+### Audio Files
+- Raw VAD segments stored as Opus files: `audio/YYYY-MM-DD/segments/HHMMSS.opus`
+- Daily concatenated recordings: `audio/YYYY-MM-DD/full_day.opus`
+- Format: Opus, mono, 16kHz for efficient storage
+
+### Transcripts
+- Per-segment JSONL: `transcripts/YYYY-MM-DD/segments.jsonl`
+- Full day text: `transcripts/YYYY-MM-DD/full_day.txt`
+- Format: JSONL with metadata, plain text with [HH:MM:SS] timestamps
+
+### Database
+- SQLite database: `db/voice_journal.db`
+- Contains: segment metadata, transcript index, conversation groupings
+- WAL mode for better concurrent access
 
 ## Architecture
 
-### Batch Processing Pipeline (New)
+### Services
+1. **Daemon Service**: 
+   - Audio capture from microphone
+   - Silero VAD for speech detection
+   - Segment staging to disk (Opus + JSON metadata)
+   - Backlog tracking in SQLite
 
-The system now processes audio in **batch mode** rather than real-time. This is a fundamental change from the original design.
+2. **Web Service**:
+   - Flask dashboard for playback and browsing
+   - Audio streaming with HTTP Range support
+   - Transcript display with interactive seeking
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    REAL-TIME (LIGHTWEIGHT)                    │
-│                                                               │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    │
-│  │   Stage 1    │───>│   Stage 2    │───>│   Staging    │    │
-│  │ Audio Capture│    │     VAD      │    │   Queue      │    │
-│  │ sounddevice  │    │  Silero VAD  │    │ (disk + DB)  │    │
-│  └──────────────┘    └──────────────┘    └──────────────┘    │
-│                                                   │            │
-└──────────────────────────────────────────────────┼────────────┘
-                                                   │
-                                                   ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    BATCH PROCESSING                           │
-│              (Runs when CPU is idle / overnight)             │
-│                                                               │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    │
-│  │   Segment    │───>│ Preprocessing│───>│    ASR       │    │
-│  │   Merging    │    │   Denoise    │    │ large-v3     │    │
-│  │ (gap < 2.5s) │    │   Normalize  │    │ + confidence │    │
-│  └──────────────┘    └──────────────┘    └──────────────┘    │
-│                                                 │              │
-│                                                 ▼              │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    │
-│  │   Stage 7    │<───│   Stage 6    │<───│   Stage 5    │    │
-│  │ Obsidian     │    │ LLM Class.   │    │ Conversation │    │
-│  │ Vault Notes  │    │   Ollama     │    │  Grouping    │    │
-│  └──────────────┘    └──────────────┘    └──────────────┘    │
-│       │                                                        │
-│       ▼                                                        │
-│  ┌──────────────┐                       ┌──────────────┐      │
-│  │   Stage 8    │                       │   Stage 3    │      │
-│  │   SQLite     │                       │ Speaker ID   │      │
-│  │ FTS5 Index   │                       │ (Embeddings) │      │
-│  └──────────────┘                       └──────────────┘      │
-└──────────────────────────────────────────────────────────────┘
-```
+3. **Transcribe Service** (on-demand):
+   - Batch transcription using faster-whisper
+   - Segment merging and preprocessing
+   - Speaker identification (optional)
+   - Full-day transcript and audio assembly
 
-### Key Architecture Changes
+### Processing Flow
+1. Audio captured → VAD detects speech segments
+2. Segments saved as Opus files with metadata JSON
+3. Backlog tracker monitors staged segments
+4. Scheduler triggers batch transcription when:
+   - CPU is idle (<30%) for 60+ seconds, OR
+   - In guaranteed window (10PM-6AM daily), OR
+   - Manual transcription requested
+5. Batch processor loads segments, merges, preprocesses, transcribes
+6. Results stored in SQLite, full-day files generated
+7. Dashboard serves files for playback and browsing
 
-1. **Segments are merged BEFORE transcription** (Fix 2)
-   - Consecutive VAD segments separated by <2.5s are merged
-   - Minimum 5s transcription unit prevents hallucination on short clips
-   - This is critical for accuracy - Whisper hallucinates on short, isolated segments
+## Migration
 
-2. **Audio preprocessing** (Fix 5)
-   - Denoising applied before VAD and ASR
-   - Gain normalization for consistent loudness
-   - Reduces false VAD triggers and improves transcription
+To migrate existing data from previous voice-journal installations:
 
-3. **Confidence gating** (Fix 4)
-   - Every segment gets `no_speech_prob` and `avg_logprob`
-   - Uncertain segments are kept but flagged with ⚠️
-   - Notes with low-confidence segments get `needs_review: true` frontmatter
-
-4. **Embedding-based speaker ID** (Fix 6)
-   - Replaced fragile pitch-threshold method
-   - Uses resemblyzer or speechbrain for speaker embeddings
-   - Cosine similarity matching against reference embeddings
-
-5. **Idle-triggered scheduler** (Fix 8)
-   - Batch jobs run when CPU is idle (<30% usage)
-   - Guaranteed overnight window (10 PM - 6 AM)
-   - Adaptive fallback to distil-large-v3 when backlog overflows
-
-### Data Flow
-
-1. **Audio Capture**: Continuous mic input → ring buffer
-2. **VAD**: Silero VAD detects speech segments
-3. **Staging**: Segments saved to disk, tracked in SQLite
-4. **Batch Job** (when scheduled):
-   - Merge segments (gap-based)
-   - Preprocess (denoise, normalize)
-   - Transcribe (large-v3 with anti-hallucination settings)
-   - Identify speakers (embeddings)
-   - Group into conversations (90s gap)
-   - Classify (LLM)
-   - Write to Obsidian + SQLite
-
----
-
-## Performance
-
-### Batch Processing Performance
-
-**Hardware**: Intel i3 (no GPU)
-
-| Model | Real-Time Factor* | Quality | Notes |
-|-------|------------------|---------|-------|
-| faster-whisper `large-v3` | ~2.0-2.5x | Best | Accuracy over speed |
-| faster-whisper `distil-large-v3` | ~1.0-1.2x | Good | Fallback for overflow |
-
-**Real-Time Factor**: Processing time ÷ Audio duration
-- **< 1.0**: Faster than real-time
-- **~2.0**: Large-v3 on i3 (typical)
-- **Higher RTF = More accurate transcription**
-
-### Expected Daily Processing Time
-
-With **3-6 hours of actual speech per day**:
-
-- **large-v3 (RTF ~2.0)**: 6-12 hours of processing time per day
-- **With overnight window (10 PM - 6 AM)**: 8 hours available
-- **If backlog grows**: Automatically switches to fallback model
-
-Run the benchmark on your hardware:
 ```bash
-python benchmark_asr.py path/to/sample_audio.m4a
+# Dry run first to see what would be migrated
+python3 migrate_data.py --dry-run
+
+# Actual migration
+python3 migrate_data.py
 ```
 
----
+The script will:
+1. Auto-detect external drive for DATA_ROOT
+2. Create new directory structure
+3. Migrate existing database
+4. Migrate audio files to date-based structure
+5. Migrate transcript files to date-based structure
+6. Leave original files intact (manual cleanup after verification)
 
-## Known Limitations
+## Maintenance
 
-### 1. Hallucination on Short/Silent Segments (FIXED)
+### Log Rotation
+Docker containers use json-file log drivers with automatic rotation:
+- Max size: 10m per file
+- Max files: 3
 
-**Previous Issue**: Whisper would hallucinate (invent text) on short, isolated, or near-silent segments. This is a known failure mode of chunked Whisper pipelines.
+### Updates
+```bash
+# Pull latest changes
+git pull
 
-**Mitigations**:
-- Segments are now merged BEFORE transcription (minimum 5s units)
-- `vad_filter=true` trims silence before decoding
-- `condition_on_previous_text=false` prevents hallucination cascades
-- Uncertain segments are flagged with ⚠️ markers
-- Audio preprocessing (denoising) reduces silence/noise issues
+# Rebuild and restart
+./vj-control.sh restart
+```
 
-### 2. Third-Party Voice Detection
-
-**Issue**: If a third person speaks, they'll be tagged as "unknown".
-
-**Workaround**: This is a tradeoff. The system only knows registered voice profiles. Any other voice is treated as unknown.
-
-### 3. Background Media Detection
-
-**Issue**: TV/music in background may trigger VAD.
-
-**Mitigations**:
-- Adjust VAD threshold higher (0.6-0.7)
-- Speaker ID helps filter unknown voices
-- Use mute control when watching media
-
-### 4. Code-Switching Accuracy
-
-**Issue**: Stock Whisper can commit to one language for a mixed Hindi-English chunk, producing garbled words in the other language.
-
-**Mitigation**: The default `large-v3` model is explicitly prompted to output only Hindi and English. A separate Stage 6.5 cleanup pass improves readability without replacing raw ASR. Use `compare_asr_models.py` to manually compare future ASR model swaps before changing the default.
-
-### 5. Transcript Cleanup
-
-The optional Stage 6.5 Ollama pass removes meaningless fillers, resolves clear self-corrections, fixes obvious dictionary terms, and adds punctuation. It is conservative and never replaces the raw transcript: conversation notes and SQLite retain both `raw_transcript` and `cleaned_transcript`. Cleanup failures fall back to raw text and do not block processing. The extra Ollama call adds processing time per conversation and is included in the batch job duration/backlog estimate.
-
-### 6. Repetition-Loop Hallucinations
-
-Whisper can occasionally repeat a character or short phrase indefinitely, even with high token confidence. Decoder repetition safeguards are enabled, and a separate post-ASR detector keeps the output but marks it `⚠️ repetition-detected` and logs the affected time range. Near-silent merged units are skipped before ASR using the configurable RMS floor.
-
-### 7. Dashboard Audio Privacy
-
-Conversation audio is cached as compressed Opus for 30 days by default and is playable from the dashboard. This is a meaningfully larger privacy exposure than text transcripts because it includes Shivangi's actual voice. The dashboard is currently reachable only through the Tailscale address (`100.99.161.57`), which is the security boundary; adjust `dashboard.audio_retention_days` or disable network access if that boundary is not acceptable.
-
-### 8. Backlog Growth
-
-**Issue**: If daily speech exceeds overnight processing capacity, backlog grows.
-
-**Mitigations**:
-- `status.py` shows backlog depth and warns on growth
-- Adaptive fallback to faster model when backlog >24h
-- Run batch jobs manually if needed
-
----
+### Backup
+Backup the entire `DATA_ROOT/voice-journal/` directory to preserve all recordings, transcripts, and database.
 
 ## Troubleshooting
 
-### "Ollama model not available"
+### No Audio Detection
+1. Check microphone permissions: `ls -l /dev/snd/*`
+2. Verify audio group membership in Docker
+3. Check daemon logs: `./vj-control.sh logs`
 
-```bash
-# Check Ollama is running
-ollama list
+### External Drive Not Detected
+1. Ensure drive is mounted and writable
+2. Manually set DATA_ROOT in .env file
+3. Check system logs for mount points
 
-# Pull model if missing
-ollama pull llama3.2:3b
+### Web Dashboard Not Accessible
+1. Check service status: `./vj-control.sh status`
+2. Verify port 5000 is free
+3. Check web service logs
 
-# Start Ollama service
-ollama serve
-```
+### Transcription Backlog
+1. Check scheduler status in dashboard or logs
+2. Verify CPU usage allows processing
+3. Check guaranteed window schedule (10PM-6AM)
 
-### "Audio device not found"
+## Performance Notes
 
-```bash
-# List audio devices
-python -c "import sounddevice as sd; print(sd.query_devices())"
+- Designed for continuous operation on modest hardware (i3 CPU, no GPU)
+- Idle CPU usage typically <5% when not processing
+- Memory usage: ~500MB-1GB depending on workload
+- Storage efficient: Opus audio at ~12kbps ≈ 0.6MB/hour of speech
+- Batch processing runs during idle periods or overnight window
 
-# Check permissions
-sudo usermod -a -G audio $USER
-```
+## Customization
 
-### "Backlog growing" warning
+### Speaker Identification
+Speaker gender tagging is available but disabled by default to save resources. Enable in config if needed.
 
-```bash
-# Check current status
-python status.py
+### Whisper Models
+Change `ASR_MODEL_SIZE` in .env to use different faster-whisper models (tiny, base, small, medium, large-v2, large-v3).
 
-# Run batch job manually
-python -m processing.batch_processor
-
-# Use fallback model if behind
-python -m processing.batch_processor --fallback
-```
-
-### "resemblyzer not found"
-
-```bash
-# Install speaker embedding library
-pip install resemblyzer
-
-# Or use heavier alternative
-pip install speechbrain
-```
-
-### Low-confidence segments flagged
-
-This is expected behavior. The system is being honest about uncertainty:
-
-- Review flagged segments in Obsidian (marked with ⚠️)
-- Check if audio quality can be improved
-- Consider re-processing with cleaner audio
-
----
-
-## Project Structure
-
-```
-voice_journal/
-├── audio_capture/     # Stage 1: Mic capture + preprocessing
-├── vad/              # Stage 2: Silero VAD + segment merging
-├── speaker_id/       # Stage 3: Embedding-based speaker ID
-├── asr/              # Stage 4: faster-whisper (batch mode)
-├── conversation/     # Stage 5: Conversation grouping
-├── llm_output/       # Stage 6: Ollama classification
-├── obsidian/         # Stage 7: Markdown notes
-├── storage/          # Stage 8: SQLite + FTS5 + backlog tracking
-├── processing/       # Batch processor + scheduler
-├── config/           # Configuration files
-├── utils/            # Logging, mute control
-├── tests/            # Unit tests
-├── daemon_v2.py      # Main daemon (batch mode)
-├── benchmark_asr.py  # Model benchmarking script
-├── status.py         # CLI status checker
-├── calibrate.py      # Voice calibration CLI
-└── README.md         # This file
-```
-
----
-
-## Contributing
-
-This is a personal project, but contributions are welcome:
-
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
-
----
+### Language Processing
+The system is optimized for Hindi/English code-switching. Adjust `ASR_LANGUAGE` and `ASR_INITIAL_PROMPT` as needed.
 
 ## License
 
-MIT License - Use freely for personal projects.
-
----
-
-## Acknowledgments
-
-- **Silero VAD**: https://github.com/snakers4/silero-vad
-- **faster-whisper**: https://github.com/guillaumekln/faster-whisper
-- **Ollama**: https://ollama.ai
-- **Resemblyzer**: https://github.com/resemble-ai/Resemblyzer
-
----
-
-*Built with care for personal journaling. Accuracy over speed.*
+MIT License - see LICENSE file for details

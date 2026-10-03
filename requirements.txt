@@ -27,11 +27,8 @@ resemblyzer>=0.1.4,<0.2.0
 
 # LLM Integration
 requests>=2.31.0
-ollama>=0.1.0
 
 # Obsidian/Markdown
-pyyaml>=6.0.1
-python-slugify>=8.0.1
 
 # Database
 # SQLite is built-in, no extra package needed
@@ -48,7 +45,6 @@ pynput>=1.7.6  # For global hotkeys
 plyer>=2.1.0  # For desktop notifications
 
 # Hindi/Hinglish Transliteration (for glossary)
-indic-transliteration>=2.3.0
 
 # Testing
 pytest>=7.4.0

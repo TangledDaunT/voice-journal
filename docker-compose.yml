@@ -1,0 +1,65 @@
+# Docker Compose for Voice Journal
+version: '3.8'
+
+services:
+  daemon:
+    build: .
+    container_name: voice_journal_daemon
+    volumes:
+      - ${DATA_ROOT}:/data:rw
+      - ./models:/app/models:ro
+      - ./logs:/app/logs:rw
+      - /dev/snd:/dev/snd
+    environment:
+      - DATA_ROOT=/data
+      - TZ=Asia/Kolkata
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits - can be overridden in .env
+    cpus: ${DAEMON_CPUS:-2.0}
+    mem_limit: ${DAEMON_MEMORY:-2G}
+    # reservations not directly supported; we can use minmum? ignore for now
+    # we'll keep as limits only
+
+  web:
+    build: .
+    container_name: voice_journal_web
+    volumes:
+      - ${DATA_ROOT}:/data:rw
+      - ./models:/app/models:ro
+      - ./logs:/app/logs:rw
+    environment:
+      - DATA_ROOT=/data
+      - TZ=Asia/Kolkata
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits - can be overridden in .env
+    cpus: ${WEB_CPUS:-1.0}
+    mem_limit: ${WEB_MEMORY:-1G}
+
+  transcribe:
+    build: .
+    container_name: voice_journal_transcribe
+    volumes:
+      - ${DATA_ROOT}:/data:rw
+      - ./models:/app/models:ro
+    environment:
+      - DATA_ROOT=/data
+      - TZ=Asia/Kolkata
+    entrypoint: ["python", "-m", "vj.transcribe"]
+    restart: "no"
+    # Resource limits - can be overridden in .env
+    cpus: ${TRANSCRIBE_CPUS:-2.0}
+    mem_limit: ${TRANSCRIBE_MEMORY:-4G}

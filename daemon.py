@@ -18,8 +18,6 @@ from vad.silero_vad import VADProcessor, SpeechSegment
 from speaker_id.identification import SpeakerIdentifier, SpeakerMatch
 from asr.transcriber import ASRProcessor, TranscriptSegment
 from conversation.grouping import ConversationGrouper, ConversationUnit
-from llm_output.classifier import LLMClassifier, ClassificationResult
-from obsidian.output import ObsidianWriter
 from storage.database import SQLiteStore
 from utils.logger import setup_logging, logger, log_stage
 
@@ -86,17 +84,6 @@ class VoiceJournalDaemon:
 
         # Stage 5: Conversation Grouping
         self.conversation_grouper = ConversationGrouper(self.config)
-
-        # Stage 6: LLM Classification
-        self.llm_classifier = LLMClassifier(self.config)
-
-        # Stage 7: Obsidian Output
-        self.obsidian_writer = ObsidianWriter(self.config)
-
-        # Stage 8: SQLite Storage
-        self.sqlite_store = SQLiteStore(self.config)
-
-        logger.info("All stages initialized")
 
     def start(self):
         """Start the daemon."""
@@ -246,25 +233,6 @@ class VoiceJournalDaemon:
 
     def _health_check(self):
         """Perform health check on all stages."""
-        # Check Ollama availability
-        from llm_output.classifier import check_ollama_model
-
-        ollama_ok = check_ollama_model(
-            self.config.llm.model,
-            self.config.llm.ollama_host
-        )
-
-        if not ollama_ok:
-            logger.warning("Ollama model not available")
-
-        # Log stats
-        logger.info(
-            f"Health check: segments={self.stats['segments_processed']}, "
-            f"conversations={self.stats['conversations_created']}, "
-            f"errors={self.stats['errors']}, "
-            f"queues: audio={self.audio_queue.qsize()}, "
-            f"vad={self.vad_queue.qsize()}, trans={self.transcript_queue.qsize()}"
-        )
 
     def _vad_worker(self):
         """Worker thread for VAD processing."""
@@ -383,33 +351,6 @@ class VoiceJournalDaemon:
     def _process_conversation(self, conversation: ConversationUnit):
         """Process a complete conversation through remaining stages."""
         try:
-            # Stage 6: LLM Classification
-            classification = self.llm_classifier.classify(conversation)
-
-            # Stage 7: Write to Obsidian
-            note_path = self.obsidian_writer.write_conversation_note(
-                conversation,
-                classification
-            )
-
-            # Stage 8: Store in SQLite
-            self.sqlite_store.insert_conversation(
-                conversation,
-                classification,
-                note_path
-            )
-
-            self.stats['conversations_created'] += 1
-
-            logger.info(
-                f"Conversation #{conversation.conversation_id} processed: "
-                f"{classification.source_type}, {conversation.total_word_count} words"
-            )
-
-        except Exception as e:
-            logger.error(f"Error processing conversation: {e}")
-            self.stats['errors'] += 1
-
     def _flush_pipeline(self):
         """Flush any pending data in the pipeline."""
         # Flush conversation grouper

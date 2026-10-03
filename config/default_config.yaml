@@ -8,7 +8,7 @@ audio:
   block_size: 512
   ring_buffer_seconds: 30
   keep_audio: false
-  audio_storage_path: "./audio_clips"
+  audio_storage_path: "${DATA_ROOT:-/home/shreyansh/NAS}/voice-journal/audio"
 
 # VAD (Stage 2) - Runs near-real-time, segments stored for batch processing
 vad:
@@ -61,38 +61,14 @@ conversation:
   rapid_alternation_threshold: 3.0
 
 # LLM Classification (Stage 6)
-llm:
-  model: "qwen2.5:1.5b"  # Better multilingual/Hindi support than llama
-  ollama_host: "http://localhost:11434"
-  timeout_seconds: 45  # Slightly longer for 7B model if used
-  max_retries: 2
-  temperature: 0.2  # Slightly higher for classification tasks
-  max_tokens: 600  # More tokens for nuanced analysis
-
-# Transcript cleanup (Stage 6.5)
 cleanup:
-  enabled: true
-  custom_dictionary: ["Shreyansh", "Shivangi", "Cupid", "MindBridge", "OpenClaw", "LegalLawAdvisor"]
-  timeout_seconds: 45
-  max_tokens: 1200
-  estimated_seconds_per_conversation: 30
-
-# Obsidian Output (Stage 7)
-obsidian:
-  vault_path: "./obsidian_vault"
-  daily_notes_dir: "VoiceJournal/Daily"
-  conversation_notes_dir: "VoiceJournal/Conversations"
-  template_daily: null
-  template_conversation: null
-
-# Database (Stage 8)
 database:
-  path: "./data/voice_journal.db"
+  path: "${DATA_ROOT:-/home/shreyansh/NAS}/voice-journal/db/voice_journal.db"
   enable_fts: true
 
 # Dashboard audio playback (separate from raw staging retention)
 dashboard:
-  audio_cache_path: "./audio_cache"
+  audio_cache_path: "${DATA_ROOT:-/home/shreyansh/NAS}/voice-journal/audio_cache"
   audio_retention_days: 30
   audio_bitrate_kbps: 32
 

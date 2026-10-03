@@ -25,8 +25,6 @@ from audio_capture.preprocess import AudioPreprocessor
 from asr.transcriber_batch import BatchASRProcessor  # New batch-optimized transcriber
 from speaker_id.identification import SpeakerIdentifier
 from conversation.grouping import ConversationGrouper, ConversationUnit
-from llm_output.classifier import LLMClassifier
-from obsidian.output import ObsidianWriter
 from storage.database import SQLiteStore, BacklogTracker
 from utils.logger import logger, log_stage, log_metric
 
@@ -76,42 +74,123 @@ class StagingQueue:
     def stage_segment(self, segment: SpeechSegment) -> str:
         """
         Stage a VAD segment for batch processing.
-
+        
         Returns:
             segment_id for tracking
         """
-        # Generate unique ID
-        segment_id = f"{segment.start_time.strftime('%Y%m%d_%H%M%S')}_{id(segment)}"
+        # Generate unique ID based on start time
+        
+        # Determine date directory (Asia/Kolkata timezone)
+        from datetime import datetime
+        import pytz
+        
+        # Use segment start time for date directory
+        ist = pytz.timezone("Asia/Kolkata")
+        if segment.start_time.tzinfo is None:
+            # Assume UTC if no timezone info
+            utc = pytz.UTC
+            segment_start_ist = utc.localize(segment.start_time).astimezone(ist)
+        else:
+            segment_start_ist = segment.start_time.astimezone(ist)
+        
+        date_str = segment_start_ist.strftime("%Y-%m-%d")
+        time_str = segment_start_ist.strftime("%H%M%S")
+        
+        # Build path using DATA_ROOT from environment
+        data_root = os.environ.get("DATA_ROOT", "/home/shreyansh/NAS")
+            date_dir = os.path.join(data_root, "voice-journal", "audio", date_str, "segments")
+        os.makedirs(date_dir, exist_ok=True)
+        
+        # Generate unique filename
+        segment_id = f"{date_str}_{time_str}_{id(segment)}"
         segment_id = segment_id.replace(" ", "_").replace(":", "-")
-
-        # Save audio
-        audio_filename = f"{segment_id}.npy"
-        audio_path = self.staging_dir / audio_filename
-
-        np.save(str(audio_path), segment.audio)
-
-        # Save metadata
-        metadata_path = self.staging_dir / f"{segment_id}.json"
+        
+        # Save audio as Opus file
+        audio_filename = f"{segment_id}.opus"
+        audio_path = os.path.join(date_dir, audio_filename)
+        
+        # Convert and save as Opus using ffmpeg
+        import subprocess
+        import tempfile
+        import json
+        
+        # Save temporary wav file first
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+            # Convert audio to proper format for wav
+            from scipy.io.wavfile import write
+            import numpy as np
+            # Ensure audio is mono and correct sample rate
+            audio_mono = segment.audio
+            if audio_mono.ndim > 1:
+                if audio_mono.shape[1] > 1:
+                    audio_mono = audio_mono.mean(axis=1)  # Convert to mono
+                else:
+                    audio_mono = audio_mono.flatten()  # Remove single dimension
+            
+            # Ensure we have proper float32 for processing, then convert to int16 for wav
+            if audio_mono.dtype != np.float32:
+                audio_mono = audio_mono.astype(np.float32)
+            
+            # Normalize and convert to 16-bit PCM
+            audio_mono = np.clip(audio_mono, -1.0, 1.0)
+            audio_int16 = (audio_mono * 32767).astype(np.int16)
+            
+            write(tmp_wav.name, segment.sample_rate, audio_int16)
+            
+            # Convert to opus
+            cmd = [
+                "ffmpeg",
+                "-y",  # overwrite output
+                "-i", tmp_wav.name,
+                "-c:a", "libopus",
+                "-b:a", "12k",  # good speech bitrate
+                "-vbr", "on",
+                "-frame_duration", "20",
+                "-application", "audio",
+                audio_path
+            ]
+            
+            try:
+                result = subprocess.run(cmd, check=True, capture_output=True, timeout=30)
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to convert audio to Opus: {e}")
+                # Fallback: save as wav if opus fails
+                audio_path = audio_path.replace(".opus", ".wav")
+                os.rename(tmp_wav.name, audio_path)
+                audio_format = "wav"
+            except subprocess.TimeoutExpired:
+                logger.error(f"FFmpeg timeout converting audio to Opus")
+                audio_path = audio_path.replace(".opus", ".wav")
+                os.rename(tmp_wav.name, audio_path)
+                audio_format = "wav"
+            else:
+                # Clean up temp file
+                os.unlink(tmp_wav.name)
+                audio_format = "opus"
+        
+        # Save metadata as JSON
+        metadata_path = audio_path.replace(".opus", ".json").replace(".wav", ".json")
         metadata = {
             "segment_id": segment_id,
             "start_time": segment.start_time.isoformat(),
             "end_time": segment.end_time.isoformat(),
-            "audio_path": str(audio_path),
+            "audio_path": audio_path,
             "sample_rate": segment.sample_rate,
             "duration_seconds": segment.duration_seconds,
-            "captured_at": datetime.now().isoformat()
+            "captured_at": datetime.now().isoformat(),
+            "format": audio_format
         }
-
+        
         with open(metadata_path, "w") as f:
             json.dump(metadata, f, indent=2)
-
+        
         # Track in backlog
         self.backlog_tracker.add_segment(
             segment_id=segment_id,
             duration_seconds=segment.duration_seconds
         )
-
-        log_stage("Staging", f"Segment staged: {segment.duration_seconds:.2f}s")
+        
+        log_stage("Staging", f"Segment staged: {segment.duration_seconds:.2f}s -> {os.path.basename(audio_path)}")
         return segment_id
 
     def get_pending_segments(self, limit: int = None) -> List[StagedSegment]:
@@ -198,7 +277,6 @@ class BatchProcessor:
         self._speaker_identifier = None
         self._conversation_grouper = None
         self._llm_classifier = None
-        self._obsidian_writer = None
         self._sqlite_store = None
 
         self.is_running = False
@@ -228,10 +306,7 @@ class BatchProcessor:
             self._conversation_grouper = ConversationGrouper(self.config)
 
         if self._llm_classifier is None:
-            self._llm_classifier = LLMClassifier(self.config)
 
-        if self._obsidian_writer is None:
-            self._obsidian_writer = ObsidianWriter(self.config)
 
         if self._sqlite_store is None:
             self._sqlite_store = SQLiteStore(self.config)
@@ -363,21 +438,18 @@ class BatchProcessor:
         for conversation in conversations:
             try:
                 # Cleanup is optional and never replaces the raw ASR transcript.
-                cleanup = self._llm_classifier.cleanup(conversation)
+                # Cleanup removed - using raw transcript
+                cleanup = type("Cleanup", (), {"cleaned_transcript": conversation.get_raw_transcript(), "raw_transcript": conversation.get_raw_transcript()})()
 
                 # Classify the readable version while retaining raw text for storage.
-                classification = self._llm_classifier.classify(
+                # Classification removed - using default
+                classification = type("Classification", (), {"source_type": "unknown", "confidence": 0.0})()
                     conversation,
                     transcript=cleanup.cleaned_transcript
                 )
 
                 self._cache_conversation_audio(conversation, audio_by_transcript_id)
-
-                # Write to Obsidian
-                note_path = self._obsidian_writer.write_conversation_note(
-                    conversation,
-                    classification,
-                    cleaned_transcript=cleanup.cleaned_transcript
+                note_path = None
                 )
 
                 # Store in SQLite
@@ -390,7 +462,7 @@ class BatchProcessor:
                 )
 
                 conversations_created += 1
-                log_stage("Batch", f"Conversation {conversation.conversation_id}: {classification.source_type}")
+                log_stage("Batch", f"Conversation {conversation.conversation_id}: processed")
 
             except Exception as e:
                 logger.error(f"Error processing conversation: {e}")

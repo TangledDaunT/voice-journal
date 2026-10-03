@@ -26,7 +26,6 @@ CORS(app)
 # Configuration
 BASE_DIR = Path(__file__).parent.parent
 DB_PATH = BASE_DIR / "data" / "voice_journal.db"
-VAULT_PATH = BASE_DIR / "obsidian_vault"
 CONFIG_PATH = BASE_DIR / "config" / "default_config.yaml"
 APP_CONFIG = Config.from_yaml(str(CONFIG_PATH)) if CONFIG_PATH.exists() else Config()
 AUDIO_CACHE_PATH = BASE_DIR / APP_CONFIG.dashboard.audio_cache_path
@@ -446,20 +445,6 @@ def health_check():
             "timestamp": datetime.now().isoformat()
         }), 500
 
-
-# Serve Obsidian notes
-@app.route('/notes/<path:filename>')
-def serve_note(filename):
-    """Serve Obsidian markdown notes."""
-    note_path = VAULT_PATH / filename
-
-    if not note_path.exists():
-        return jsonify({"error": "Note not found"}), 404
-
-    with open(note_path, 'r') as f:
-        content = f.read()
-
-    return jsonify({"content": content, "path": filename})
 
 
 @app.route('/api/stream')

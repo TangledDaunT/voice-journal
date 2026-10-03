@@ -65,20 +65,6 @@ class TranscriptSegmentWithConfidence:
     def word_count(self) -> int:
         return len([w for w in self.words if w.get("word", "").strip()])
 
-    def format_for_obsidian(self) -> str:
-        """Format transcript for Obsidian with confidence marker if needed."""
-        timestamp = self.start_time.strftime("%H:%M:%S")
-        speaker = self.speaker.capitalize()
-
-        # Add confidence marker
-        markers = []
-        if self.low_confidence:
-            markers.append("⚠️")
-        if self.repetition_detected:
-            markers.append("⚠️ repetition-detected")
-        marker = f" {' '.join(markers)}" if markers else ""
-
-        return f"[{timestamp}] {speaker}: {self.text}{marker}"
 
 
 class BatchASRProcessor:
