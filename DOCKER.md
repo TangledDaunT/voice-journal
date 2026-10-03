@@ -22,11 +22,10 @@ The dashboard is available at `http://localhost:5000`. `DATA_ROOT` must point
 to the mounted external disk; the application writes the database and
 `daily_journal/audio/YYYY-MM-DD.mp3` files below that directory. The compose
 file passes `/dev/snd` to the daemon, so the host must expose an
-ALSA-compatible microphone. Ensure the Docker user can write to the disk:
-
-```bash
-sudo chown -R "$USER":"$USER" /mnt/voice-journal
-```
+ALSA-compatible microphone. On exFAT mounts whose ownership is controlled by
+mount options, the compose services run as root inside the container so they
+can write the bind-mounted data directory. For a native Linux filesystem,
+prefer setting ownership on the mount and removing the `user: "0:0"` overrides.
 
 ## Start on boot
 
