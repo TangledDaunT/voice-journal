@@ -274,6 +274,56 @@
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.1); }
         }
+
+        .mute-btn {
+            background: rgba(255, 107, 107, 0.2);
+            border: 2px solid #ff6b6b;
+            color: #ff6b6b;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .mute-btn:hover {
+            background: rgba(255, 107, 107, 0.3);
+        }
+
+        .mute-btn.muted {
+            background: rgba(255, 107, 107, 0.4);
+            color: #fff;
+        }
+
+        .mute-btn.unmuted {
+            background: rgba(74, 222, 128, 0.2);
+            border-color: #4ade80;
+            color: #4ade80;
+        }
+
+        .mute-btn.unmuted:hover {
+            background: rgba(74, 222, 128, 0.3);
+        }
+
+        .muted-indicator {
+            display: none;
+            background: rgba(255, 107, 107, 0.2);
+            border: 1px solid #ff6b6b;
+            color: #ff6b6b;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+
+        .muted-indicator.active {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
     </style>
 </head>
 <body>
@@ -282,8 +332,13 @@
             <h1>
                 <span class="status-dot" id="live-indicator"></span>
                 Voice Journal <span id="live-badge" style="font-size: 12px; color: #4ade80; margin-left: 10px;">● LIVE</span>
+                <span class="muted-indicator" id="muted-indicator">🔇 MUTED</span>
             </h1>
-            <div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button class="mute-btn unmuted" id="mute-btn" onclick="toggleMute()">
+                    <span id="mute-icon">🎤</span>
+                    <span id="mute-text">Mute</span>
+                </button>
                 <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
             </div>
         </header>
@@ -655,6 +710,87 @@
 
         // Start live updates
         connectLiveUpdates();
+
+        // Mute functionality
+        async function toggleMute() {
+            const btn = document.getElementById('mute-btn');
+            const icon = document.getElementById('mute-icon');
+            const text = document.getElementById('mute-text');
+            const indicator = document.getElementById('muted-indicator');
+            const liveIndicator = document.getElementById('live-indicator');
+            const liveBadge = document.getElementById('live-badge');
+
+            try {
+                btn.disabled = true;
+                text.textContent = 'Updating...';
+
+                const res = await fetch('/api/mute', { method: 'POST' });
+                const data = await res.json();
+
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    text.textContent = 'Error';
+                    return;
+                }
+
+                // Update UI based on mute state
+                if (data.muted) {
+                    btn.classList.remove('unmuted');
+                    btn.classList.add('muted');
+                    icon.textContent = '🔇';
+                    text.textContent = 'Unmute';
+                    indicator.classList.add('active');
+                    liveIndicator.style.background = '#ff6b6b';
+                    liveBadge.textContent = '○ MUTED';
+                    liveBadge.style.color = '#ff6b6b';
+                } else {
+                    btn.classList.remove('muted');
+                    btn.classList.add('unmuted');
+                    icon.textContent = '🎤';
+                    text.textContent = 'Mute';
+                    indicator.classList.remove('active');
+                    liveIndicator.style.background = '#4ade80';
+                    liveBadge.textContent = '● LIVE';
+                    liveBadge.style.color = '#4ade80';
+                }
+            } catch (e) {
+                console.error('Error toggling mute:', e);
+                alert('Failed to toggle mute: ' + e.message);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Check mute status on load
+        async function checkMuteStatus() {
+            try {
+                const res = await fetch('/api/mute/status');
+                const data = await res.json();
+
+                if (data.muted) {
+                    const btn = document.getElementById('mute-btn');
+                    const icon = document.getElementById('mute-icon');
+                    const text = document.getElementById('mute-text');
+                    const indicator = document.getElementById('muted-indicator');
+                    const liveIndicator = document.getElementById('live-indicator');
+                    const liveBadge = document.getElementById('live-badge');
+
+                    btn.classList.remove('unmuted');
+                    btn.classList.add('muted');
+                    icon.textContent = '🔇';
+                    text.textContent = 'Unmute';
+                    indicator.classList.add('active');
+                    liveIndicator.style.background = '#ff6b6b';
+                    liveBadge.textContent = '○ MUTED';
+                    liveBadge.style.color = '#ff6b6b';
+                }
+            } catch (e) {
+                console.error('Error checking mute status:', e);
+            }
+        }
+
+        // Check on load
+        checkMuteStatus();
     </script>
 </body>
 </html>

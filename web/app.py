@@ -31,6 +31,11 @@ CONFIG_PATH = BASE_DIR / "config" / "default_config.yaml"
 APP_CONFIG = Config.from_yaml(str(CONFIG_PATH)) if CONFIG_PATH.exists() else Config()
 AUDIO_CACHE_PATH = BASE_DIR / APP_CONFIG.dashboard.audio_cache_path
 
+# Remote daemon control - runs locally since web server is on same machine
+REMOTE_HOST = "localhost"
+MUTE_STATE_FILE = Path("/tmp/vj_mute_state")
+DAEMON_SERVICE = "vj-daemon"
+
 # Real-time update subscribers
 subscribers = []
 subscriber_lock = threading.Lock()
@@ -593,6 +598,91 @@ def get_current_stats():
             "self_talk": 0,
             "media_flagged": 0
         }
+
+
+def run_local_command(command):
+    """Run a command locally on this machine."""
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            return {"error": f"Command failed: {result.stderr}", "returncode": result.returncode}
+
+        return {"success": True, "output": result.stdout}
+
+    except subprocess.TimeoutExpired:
+        return {"error": "Command timeout"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.route('/api/mute/status')
+def get_mute_status():
+    """Get current mute status."""
+    try:
+        if MUTE_STATE_FILE.exists():
+            mute_state = MUTE_STATE_FILE.read_text().strip()
+            return jsonify({"muted": mute_state == "muted"})
+
+        return jsonify({"muted": False})
+
+    except Exception as e:
+        return jsonify({"muted": False, "error": str(e)})
+
+
+@app.route('/api/mute', methods=['POST'])
+def toggle_mute():
+    """Toggle mute state on the daemon by restarting it."""
+    try:
+        current_muted = False
+        if MUTE_STATE_FILE.exists():
+            current_state = MUTE_STATE_FILE.read_text().strip()
+            current_muted = current_state == "muted"
+
+        new_state = not current_muted
+        new_state_str = "muted" if new_state else "unmuted"
+        MUTE_STATE_FILE.write_text(new_state_str)
+
+        systemctl_result = run_local_command(f"systemctl --user status {DAEMON_SERVICE} 2>&1")
+
+        if "active" in systemctl_result.get("output", "") or "running" in systemctl_result.get("output", ""):
+            if new_state:
+                run_local_command(f"systemctl --user stop {DAEMON_SERVICE}")
+                run_local_command(f"systemctl --user start {DAEMON_SERVICE} --mute")
+            else:
+                run_local_command(f"systemctl --user restart {DAEMON_SERVICE}")
+        else:
+            find_result = run_local_command("pgrep -f 'python.*daemon' || true")
+            daemon_pids = find_result.get("output", "").strip()
+
+            if daemon_pids:
+                for pid in daemon_pids.split("\n"):
+                    if pid.strip():
+                        run_local_command(f"kill {pid.strip()} 2>/dev/null || true")
+
+            time.sleep(1)
+
+            daemon_path = BASE_DIR / "daemon.py"
+            venv_python = BASE_DIR / "venv" / "bin" / "python3"
+
+            if new_state:
+                run_local_command(f"cd {BASE_DIR} && nohup {venv_python} {daemon_path} --mute > {BASE_DIR}/daemon_muted.log 2>&1 &")
+            else:
+                run_local_command(f"cd {BASE_DIR} && nohup {venv_python} {daemon_path} > {BASE_DIR}/daemon.log 2>&1 &")
+
+        return jsonify({
+            "muted": new_state,
+            "message": f"Daemon restarted ({new_state_str})"
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 
 # ============================================================================
