@@ -26,20 +26,18 @@ python calibrate.py
 ./vj-control.sh unmute
 ```
 
-## Architecture (8 Stages)
+## Architecture
 
 ```
-Audio Capture → VAD → Speaker ID → ASR → Conversation Grouping → LLM Classification → Obsidian Output → SQLite Storage
+Audio Capture → VAD → faster-whisper ASR → Daily MP3 + Daily Transcript → Web Dashboard
 ```
 
 1. **Audio Capture** - Ring buffer via sounddevice, 16kHz mono
-2. **VAD** - Silero VAD (torch hub) detects speech segments
-3. **Speaker ID** - Pitch (F0) + spectral features match to Shreyansh/Shivangi
-4. **ASR** - faster-whisper with CTranslate2 (small model, int8 quantization, CPU)
-5. **Conversation Grouping** - 90s gap threshold groups segments
-6. **LLM Classification** - Ollama (llama3.2:3b) categorizes: self_talk, couple_talk, media_or_unknown
-7. **Obsidian Output** - Daily notes + per-conversation markdown files
-8. **SQLite Storage** - FTS5 full-text search index
+2. **VAD** - Silero VAD detects speech segments and omits silence
+3. **ASR** - faster-whisper auto-detects Hindi and English per segment
+4. **Daily Journal** - Speech segments are appended to one `YYYY-MM-DD.mp3`
+   and one date-indexed transcript in SQLite
+5. **Web Dashboard** - Browse dates, read transcripts, and play MP3 recordings
 
 ## Key Files
 
@@ -80,10 +78,10 @@ speaker:
     shivangi:
       pitch_mean: 200.0  # Hz (female)
 
-# LLM for classification
-llm:
-  model: "llama3.2:3b"
-  ollama_host: "http://localhost:11434"
+# Daily journal
+journal:
+  timezone: "Asia/Kolkata"
+  storage_path: "./data/daily_journal"
 ```
 
 ## Language Support
@@ -128,7 +126,7 @@ pytest tests/ -v
 - torch (for Silero VAD)
 - librosa (audio features)
 - flask + flask-cors (web dashboard)
-- ollama (local LLM inference)
+- ffmpeg (MP3 encoding)
 
 ## Web Dashboard
 

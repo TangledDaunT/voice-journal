@@ -5,6 +5,7 @@ Handles loading, validating, and accessing configuration.
 
 import os
 import json
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
@@ -171,6 +172,12 @@ class DashboardConfig(BaseModel):
     audio_bitrate_kbps: int = Field(default=32, ge=16)
 
 
+class JournalConfig(BaseModel):
+    """Daily speech recording settings."""
+    timezone: str = "Asia/Kolkata"
+    storage_path: str = "./data/daily_journal"
+
+
 class DaemonConfig(BaseModel):
     log_level: str = Field(default="INFO")
     log_file: str = "./logs/voice_journal.log"
@@ -197,6 +204,7 @@ class Config(BaseSettings):
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
+    journal: JournalConfig = Field(default_factory=JournalConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     backlog: BacklogConfig = Field(default_factory=BacklogConfig)
@@ -209,6 +217,15 @@ class Config(BaseSettings):
         """Load configuration from a YAML file."""
         with open(path, "r") as f:
             data = yaml.safe_load(f)
+        data = _expand_environment_values(data)
+        for section in (
+            "audio", "vad", "speaker", "asr", "segment_merging",
+            "preprocessing", "cleanup", "conversation", "llm", "obsidian",
+            "database", "dashboard", "journal", "daemon", "scheduler",
+            "backlog", "system",
+        ):
+            if data.get(section) is None:
+                data[section] = {}
         return cls(**data)
 
     def to_yaml(self, path: str) -> None:
@@ -236,3 +253,20 @@ def save_voice_profiles(path: str, profiles: Dict[str, SpeakerProfile]) -> None:
             f,
             indent=2
         )
+
+
+def _expand_environment_values(value):
+    """Expand ${VAR} and ${VAR:-fallback} in YAML paths."""
+    if isinstance(value, dict):
+        return {key: _expand_environment_values(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_expand_environment_values(item) for item in value]
+    if not isinstance(value, str):
+        return value
+
+    pattern = re.compile(r"\$\{([^}:]+)(:-([^}]*))?\}")
+
+    def replace(match):
+        return os.environ.get(match.group(1), match.group(3) or "")
+
+    return pattern.sub(replace, value)

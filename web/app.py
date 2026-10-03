@@ -452,6 +452,74 @@ def health_check():
         }), 500
 
 
+def _daily_journal_db():
+        import sqlite3
+        Path(APP_CONFIG.database.path).parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(APP_CONFIG.database.path)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_journals (
+                date TEXT PRIMARY KEY,
+                audio_path TEXT NOT NULL,
+                transcript TEXT NOT NULL DEFAULT '',
+                start_time TEXT,
+                end_time TEXT,
+                speech_seconds REAL NOT NULL DEFAULT 0,
+                segment_count INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        return conn
+
+
+@app.route('/api/days')
+def list_daily_journals():
+        """List available daily recordings and transcripts."""
+        with _daily_journal_db() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT date, speech_seconds, segment_count, updated_at "
+                "FROM daily_journals ORDER BY date DESC"
+            ).fetchall()
+        return jsonify([dict(row) for row in rows])
+
+
+@app.route('/api/days/<day>')
+def get_daily_journal(day):
+        """Return one day's transcript and MP3 URL."""
+        try:
+            datetime.strptime(day, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Date must use YYYY-MM-DD"}), 400
+        with _daily_journal_db() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT date, transcript, speech_seconds, segment_count, updated_at "
+                "FROM daily_journals WHERE date = ?",
+                (day,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Daily journal not found"}), 404
+        result = dict(row)
+        result["audio_url"] = f"/api/days/{day}/audio"
+        return jsonify(result)
+
+
+@app.route('/api/days/<day>/audio')
+def get_daily_audio(day):
+        """Stream the MP3 recording for a day."""
+        try:
+            datetime.strptime(day, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Date must use YYYY-MM-DD"}), 400
+        audio_path = Path(APP_CONFIG.journal.storage_path) / "audio" / f"{day}.mp3"
+        if not audio_path.is_file():
+            return jsonify({"error": "Audio recording not found"}), 404
+        return send_file(audio_path, mimetype="audio/mpeg", conditional=True)
+
+
 # Serve Obsidian notes
 @app.route('/notes/<path:filename>')
 def serve_note(filename):
