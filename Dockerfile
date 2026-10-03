@@ -19,6 +19,7 @@ ENV PYTHONPATH="/home/voicejournal/.local/lib/python3.11/site-packages"
 # Copy requirements and install Python dependencies
 COPY --chown=voicejournal:voicejournal requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip uninstall -y typing
 
 # Copy source code
 COPY --chown=voicejournal:voicejournal . .
