@@ -4,8 +4,9 @@ numpy>=1.24.0
 scipy>=1.11.0
 
 # Voice Activity Detection
-torch>=2.0.0
-torchaudio>=2.0.0
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1+cpu
+torchaudio==2.4.1+cpu
 
 # Speech Recognition
 faster-whisper>=1.0.0
