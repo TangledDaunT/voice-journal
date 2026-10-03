@@ -13,6 +13,8 @@ RUN mkdir -p /app/logs /app/data
 # Create non-root user
 RUN useradd -m -u 1000 voicejournal
 USER voicejournal
+ENV PATH="/home/voicejournal/.local/bin:${PATH}"
+ENV PYTHONPATH="/home/voicejournal/.local/lib/python3.11/site-packages"
 
 # Copy requirements and install Python dependencies
 COPY --chown=voicejournal:voicejournal requirements.txt .
