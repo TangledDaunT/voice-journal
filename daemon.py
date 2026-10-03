@@ -5,6 +5,7 @@ import signal
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from asr.transcriber import ASRProcessor
@@ -20,7 +21,8 @@ class VoiceJournalDaemon:
     """Continuously records speech and appends it to the current daily journal."""
 
     def __init__(self, config_path: Optional[str] = None):
-        self.config = Config.from_yaml(config_path) if config_path else Config()
+        default_config_path = Path(__file__).parent / "config" / "default_config.yaml"
+        self.config = Config.from_yaml(config_path or str(default_config_path))
         setup_logging(
             log_level=self.config.daemon.log_level,
             log_file=self.config.daemon.log_file,
