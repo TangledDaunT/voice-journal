@@ -6,6 +6,8 @@ services:
     build: .
     container_name: voice_journal_daemon
     user: "0:0"
+    group_add:
+      - audio
     volumes:
       - ${DATA_ROOT:?Set DATA_ROOT to the external disk mount, e.g. /mnt/voice-journal}:/data:rw
       - ./models:/app/models:ro
