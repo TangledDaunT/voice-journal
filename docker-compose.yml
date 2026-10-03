@@ -16,6 +16,8 @@ services:
       - TZ=Asia/Kolkata
     command: ["python", "daemon.py"]
     restart: unless-stopped
+    healthcheck:
+      disable: true
     # Resource limits - can be overridden in .env
     cpus: ${DAEMON_CPUS:-2.0}
     mem_limit: ${DAEMON_MEMORY:-2G}
@@ -38,7 +40,7 @@ services:
       - "5000:5000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/days"]
       interval: 30s
       timeout: 10s
       retries: 3
