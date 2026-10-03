@@ -5,7 +5,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y     ffmpeg     libsndfile1     curl     portaudio19-dev     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y     build-essential     ffmpeg     libsndfile1     curl     portaudio19-dev     libudev-dev     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN useradd -m -u 1000 voicejournal
