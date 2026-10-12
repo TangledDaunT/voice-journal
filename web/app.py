@@ -25,11 +25,11 @@ CORS(app)
 
 # Configuration
 BASE_DIR = Path(__file__).parent.parent
-DB_PATH = BASE_DIR / "data" / "voice_journal.db"
-VAULT_PATH = BASE_DIR / "obsidian_vault"
 CONFIG_PATH = BASE_DIR / "config" / "default_config.yaml"
 APP_CONFIG = Config.from_yaml(str(CONFIG_PATH)) if CONFIG_PATH.exists() else Config()
-AUDIO_CACHE_PATH = BASE_DIR / APP_CONFIG.dashboard.audio_cache_path
+DB_PATH = Path(APP_CONFIG.database.path)
+VAULT_PATH = BASE_DIR / "obsidian_vault"
+AUDIO_CACHE_PATH = Path(APP_CONFIG.dashboard.audio_cache_path)
 
 # Remote daemon control - runs locally since web server is on same machine
 REMOTE_HOST = "localhost"

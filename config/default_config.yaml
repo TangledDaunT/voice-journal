@@ -3,20 +3,31 @@
 
 # Audio Capture (Stage 1) - Still runs near-real-time
 audio:
-  sample_rate: 16000
+  sample_rate: 48000
   channels: 1
-  block_size: 512
+  block_size: 1024
   ring_buffer_seconds: 30
   keep_audio: false
   audio_storage_path: "${DATA_ROOT:-/home/shreyansh/NAS}/voice-journal/audio"
+  # Phase 2: Capture settings
+  capture_sample_rate: 48000  # CAPTURE_SAMPLE_RATE
+  capture_bit_depth: 16       # 16-bit
+  capture_format: "MP3"       # MP3 (compressed)
 
 # VAD (Stage 2) - Runs near-real-time, segments stored for batch processing
 vad:
   model_path: "./models/silero_vad.onnx"
-  threshold: 0.5
-  min_segment_duration: 0.5
+  threshold: 0.40             # VAD_THRESHOLD
+  end_threshold: 0.25         # start - 0.15 hysteresis
+  min_segment_duration: 0.25  # VAD_MIN_SPEECH_MS=250
   silence_padding: 0.3
-  max_segment_duration: 30.0
+  max_segment_duration: 300.0 # MAX_SEGMENT_SEC
+  # Phase 2: VAD streaming settings
+  hangover_ms: 1100           # VAD_HANGOVER_MS
+  preroll_ms: 1000            # PREROLL_MS
+  postroll_ms: 300            # POSTROLL_MS
+  merge_gap_ms: 2000          # MERGE_GAP_MS
+  frame_ms: 32                # 512 samples at 16kHz = 32ms frames
 
 # Speaker Calibration (Updated for embeddings)
 speaker:
@@ -80,6 +91,19 @@ daemon:
   log_file: "./logs/voice_journal.log"
   mute_file: "./data/mute_flag"
   health_check_interval: 60
+  # Phase 2: Disk guard
+  disk_min_free_gb: 20
+
+# Noise-floor tracker (Phase 2)
+noise_floor:
+  enabled: true
+  frame_ms: 50
+  percentile: 10
+  window_minutes: 5
+  smoothing_alpha: 0.01  # Exponential smoothing factor
+  snr_threshold_db: 6     # low_snr if below
+  clip_threshold: 0.99    # Sample value for clipping detection
+  clip_fraction_threshold: 0.001  # clipped if fraction > this
 
 # Audio Preprocessing (new stage)
 preprocessing:

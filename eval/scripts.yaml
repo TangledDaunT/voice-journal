@@ -1,0 +1,76 @@
+# Scripted passages for gold test set recording
+# Edit these passages as needed; reference text for scripted takes = the passage text
+
+scripted_hi:
+  - "आज सुबह मैं जल्दी उठ गया और चाय पी। फिर मैं ऑफिस गया और काम किया। शाम को घर आया और खाना खाया।"
+  - "मेरा नाम श्रीयांश है और मैं एक सॉफ्टवेयर इंजीनियर हूँ। मुझे कोडिंग करना पसंद है और नई टेक्नोलॉजी सीखना अच्छा लगता है।"
+  - "कल मेरा मीटिंग था डॉकर और टेल्स्केल के बारे में। डिप्लॉयमेंट में कुछ प्रॉब्लम थी लेकिन हमने सॉल्व कर दी।"
+
+scripted_en:
+  - "Good morning, I woke up early today and had some tea. Then I went to the office and worked on my project. In the evening I came home and had dinner."
+  - "My name is Shreyansh and I am a software engineer. I enjoy coding and learning new technologies. Currently I am working on a voice journal system."
+  - "Yesterday I had a meeting about Docker and Tailscale deployment. There was an issue with the container networking but we resolved it by updating the configuration."
+
+scripted_hinglish:
+  - "आज मैंने डॉकर कंटेनर डिप्लॉय किया टेल्स्केल के साथ। मीटिंग में श्रीयांश ने बताया कि नेटवर्किंग इशू था लेकिन फिक्स हो गया।"
+  - "मॉर्निंग में मैं उठा और चाय पी। फिर वॉइस जर्नल का कोड रिव्यू किया। ट्रांसक्रिप्शन क्वालिटी अभी बहुत खराब है इसलिए इवैल्यूएशन हार्नेस बना रहा हूँ।"
+  - "वीकेंड पर मैं NAS सेटअप कर रहा था। एक्सटर्नल ड्राइव को एक्सफ़ैट में फॉर्मेट किया और इमिच के लिए यूज़ किया। फोटो डिडुप्लिकेशन भी चेक किया।"
+  - "कल मेरा कोडिंग सेशन था लेट नाइट तक। लामा सीपीपी और वीएलएम ट्राई किया। सीपीयू पर इंटेन्स था लेकिन वर्क कर गया। ग्राफ़िक्स कार्ड नहीं है लैपटॉप में।"
+
+# Scenario definitions for guided recording
+scenarios:
+  - id: SCRIPTED_HI
+    name: "Scripted Hindi"
+    description: "Read 3 short Hindi passages aloud (~40 words each)"
+    duration_hint: "~1 minute total"
+    takes: 1
+    re_record_allowed: true
+
+  - id: SCRIPTED_EN
+    name: "Scripted English"
+    description: "Read 3 short English passages aloud"
+    duration_hint: "~1 minute total"
+    takes: 1
+    re_record_allowed: true
+
+  - id: SCRIPTED_HINGLISH
+    name: "Scripted Hinglish"
+    description: "Read 4 Hinglish passages in Roman script, mixing tech and daily-life vocabulary"
+    duration_hint: "~1.5 minutes total"
+    takes: 1
+    re_record_allowed: true
+
+  - id: SPONT_SOLO
+    name: "Spontaneous Solo"
+    description: "~3 min natural unscripted Hinglish talk at normal desk distance"
+    duration_hint: "~3 minutes"
+    takes: 1
+    re_record_allowed: true
+
+  - id: SPONT_CONVO
+    name: "Spontaneous Conversation"
+    description: "~3 min conversation with another person at normal seating distance"
+    duration_hint: "~3 minutes"
+    takes: 1
+    re_record_allowed: true
+
+  - id: SPONT_QUIET_FAR
+    name: "Quiet/Far Speech"
+    description: "~2 min soft/far speech (leaning back from the mic)"
+    duration_hint: "~2 minutes"
+    takes: 1
+    re_record_allowed: true
+
+  - id: SPONT_NOISY
+    name: "Noisy Environment"
+    description: "~2 min speech with fan/background noise on"
+    duration_hint: "~2 minutes"
+    takes: 1
+    re_record_allowed: true
+
+  - id: SILENCE
+    name: "Room Tone / Silence"
+    description: "60 s of room tone only (reference is empty; used to measure hallucinations)"
+    duration_hint: "60 seconds"
+    takes: 1
+    re_record_allowed: true

@@ -98,7 +98,7 @@ class StagingQueue:
         
         # Build path using DATA_ROOT from environment
         data_root = os.environ.get("DATA_ROOT", "/home/shreyansh/NAS")
-            date_dir = os.path.join(data_root, "voice-journal", "audio", date_str, "segments")
+        date_dir = os.path.join(data_root, "voice-journal", "audio", date_str, "segments")
         os.makedirs(date_dir, exist_ok=True)
         
         # Generate unique filename
@@ -306,7 +306,7 @@ class BatchProcessor:
             self._conversation_grouper = ConversationGrouper(self.config)
 
         if self._llm_classifier is None:
-
+            self._llm_classifier = None  # Disabled
 
         if self._sqlite_store is None:
             self._sqlite_store = SQLiteStore(self.config)
@@ -444,13 +444,9 @@ class BatchProcessor:
                 # Classify the readable version while retaining raw text for storage.
                 # Classification removed - using default
                 classification = type("Classification", (), {"source_type": "unknown", "confidence": 0.0})()
-                    conversation,
-                    transcript=cleanup.cleaned_transcript
-                )
 
                 self._cache_conversation_audio(conversation, audio_by_transcript_id)
                 note_path = None
-                )
 
                 # Store in SQLite
                 self._sqlite_store.insert_conversation(

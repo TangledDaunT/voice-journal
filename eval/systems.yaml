@@ -1,0 +1,90 @@
+# Systems configuration for voice journal evaluation
+# Each system defines an audio variant, model, and decoding parameters
+# Add new systems here to evaluate denoise chains, specialized models, etc.
+
+systems:
+  # Baseline: current production settings (from config/default_config.yaml)
+  # model_size: "small", language: null (auto), temperature: 0.0
+  baseline_current:
+    audio_variant: "raw16k"
+    model: "small"
+    compute_type: "int8"
+    device: "cpu"
+    language: null  # Auto-detect
+    beam_size: 5
+    temperature: [0.0]
+    compression_ratio_threshold: 2.4
+    log_prob_threshold: -1.0
+    no_speech_threshold: 0.5
+    vad_filter: true
+    condition_on_previous_text: false
+    word_timestamps: true
+    initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
+
+  # Large-v3 with tuned Hinglish params (from draft_transcribe.py)
+  large-v3_tuned:
+    audio_variant: "raw16k"
+    model: "large-v3"
+    compute_type: "int8"
+    device: "cpu"
+    language: "hi"
+    beam_size: 5
+    temperature: [0.0, 0.2, 0.4]
+    compression_ratio_threshold: 2.4
+    log_prob_threshold: -1.0
+    no_speech_threshold: 0.6
+    vad_filter: true
+    condition_on_previous_text: false
+    word_timestamps: true
+    initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
+
+  # Large-v2 with same tuned params
+  large-v2_tuned:
+    audio_variant: "raw16k"
+    model: "large-v2"
+    compute_type: "int8"
+    device: "cpu"
+    language: "hi"
+    beam_size: 5
+    temperature: [0.0, 0.2, 0.4]
+    compression_ratio_threshold: 2.4
+    log_prob_threshold: -1.0
+    no_speech_threshold: 0.6
+    vad_filter: true
+    condition_on_previous_text: false
+    word_timestamps: true
+    initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
+
+  # Example: Add denoising chain (uncomment and adjust)
+  # large-v3_denoised:
+  #   audio_variant: "afftdn=nr=10:nf=-25,highpass=f=80,lowpass=f=7000"
+  #   model: "large-v3"
+  #   compute_type: "int8"
+  #   device: "cpu"
+  #   language: "hi"
+  #   beam_size: 5
+  #   temperature: [0.0, 0.2, 0.4]
+  #   compression_ratio_threshold: 2.4
+  #   log_prob_threshold: -1.0
+  #   no_speech_threshold: 0.6
+  #   vad_filter: true
+  #   condition_on_previous_text: false
+  #   word_timestamps: true
+  #   initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
+
+  # Example: Hinglish-specialized model (when available)
+  # hinglish-specialized:
+  #   audio_variant: "raw16k"
+  #   model: "/path/to/hinglish-model"
+  #   compute_type: "int8"
+  #   device: "cpu"
+  #   language: "hi"
+  #   beam_size: 5
+  #   temperature: [0.0, 0.2, 0.4]
+  #   compression_ratio_threshold: 2.4
+  #   log_prob_threshold: -1.0
+  #   no_speech_threshold: 0.6
+  #   vad_filter: true
+  #   condition_on_previous_text: false
+  #   word_timestamps: true
+  #   initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
