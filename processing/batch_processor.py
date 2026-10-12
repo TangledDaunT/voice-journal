@@ -81,25 +81,23 @@ class StagingQueue:
         # Generate unique ID based on start time
         
         # Determine date directory (Asia/Kolkata timezone)
-        from datetime import datetime
-        import pytz
-        
+        from datetime import datetime, timezone
+        from zoneinfo import ZoneInfo
+
         # Use segment start time for date directory
-        ist = pytz.timezone("Asia/Kolkata")
+        ist = ZoneInfo("Asia/Kolkata")
         if segment.start_time.tzinfo is None:
             # Assume UTC if no timezone info
-            utc = pytz.UTC
-            segment_start_ist = utc.localize(segment.start_time).astimezone(ist)
+            segment_start_ist = segment.start_time.replace(tzinfo=timezone.utc).astimezone(ist)
         else:
             segment_start_ist = segment.start_time.astimezone(ist)
         
         date_str = segment_start_ist.strftime("%Y-%m-%d")
         time_str = segment_start_ist.strftime("%H%M%S")
         
-        # Build path using DATA_ROOT from environment
-        data_root = os.environ.get("DATA_ROOT", "/home/shreyansh/NAS")
-        date_dir = os.path.join(data_root, "voice-journal", "audio", date_str, "segments")
-        os.makedirs(date_dir, exist_ok=True)
+        # Build path from configured storage root (already DATA_ROOT-expanded)
+        date_dir = Path(self.config.audio.audio_storage_path) / date_str / "segments"
+        date_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate unique filename
         segment_id = f"{date_str}_{time_str}_{id(segment)}"
