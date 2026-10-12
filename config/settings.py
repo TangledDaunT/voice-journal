@@ -231,6 +231,7 @@ class Config(BaseSettings):
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     journal: JournalConfig = Field(default_factory=JournalConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
+    noise_floor: NoiseFloorConfig = Field(default_factory=NoiseFloorConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     backlog: BacklogConfig = Field(default_factory=BacklogConfig)
     system: SystemConfig = Field(default_factory=SystemConfig)
@@ -246,7 +247,7 @@ class Config(BaseSettings):
         for section in (
             "audio", "vad", "speaker", "asr", "segment_merging",
             "preprocessing", "cleanup", "conversation", "llm", "obsidian",
-            "database", "dashboard", "journal", "daemon", "scheduler",
+            "database", "dashboard", "journal", "daemon", "noise_floor", "scheduler",
             "backlog", "system",
         ):
             if data.get(section) is None:

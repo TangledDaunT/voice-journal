@@ -36,6 +36,7 @@ services:
       - ${DATA_ROOT}:/data:rw
       - ./models:/app/models:ro
       - ./logs:/app/logs:rw
+      - ./config:/app/config:ro
       - ./web/dist:/app/web/dist:ro
     environment:
       - DATA_ROOT=/data
