@@ -27,6 +27,7 @@ Sections §4–§6 below are **HISTORICAL** — do not follow their plans. Curre
 ### ✅ Infrastructure facts to remember
 - `web/app.py` is now **bind-mounted** (`./web/app.py:/app/web/app.py:ro`) — container recreates keep all patches. To change it: edit the repo file, then `docker restart voice_journal_web`.
 - `docker compose up` output sometimes truncates over the flaky SSH/expect session — redirect to a file on the remote and `scp` it back (worked reliably).
+- **Restart order matters:** with `ipc: "service:daemon"`, a bare `docker compose restart` can start web while the daemon is still down → web fails with `failed to join IPC namespace` and stays DOWN. Restart them separately: `docker compose restart daemon`, wait until it's Up, then `docker compose restart web` (or `docker start voice_journal_web`).
 - Expected state: `voice_journal_web` Up+healthy on `0.0.0.0:5000`; `voice_journal_daemon` Up with `ipc=shareable` + hf_cache mount.
 - End-to-end: daemon recreated 16:28, stream started 16000 Hz, VAD segments + ASR lines after restart, `daily_journals['2026-10-13']` has 546 segments (updated 16:28). `conversations` table = 0 rows (grouping is async — same as before, not a regression).
 
