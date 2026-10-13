@@ -109,8 +109,16 @@ class DailyJournal:
         audio = np.asarray(audio).reshape(-1)
         pcm = (np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes()
         if path.exists():
-            with wave.open(str(path), "ab") as output:
-                output.writeframes(pcm)
+            # Read existing frames and append new ones
+            with wave.open(str(path), "rb") as existing:
+                existing_frames = existing.readframes(existing.getnframes())
+                sr = existing.getframerate()
+            combined = existing_frames + pcm
+            with wave.open(str(path), "wb") as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(sr)
+                output.writeframes(combined)
             return
         with wave.open(str(path), "wb") as output:
             output.setnchannels(1)

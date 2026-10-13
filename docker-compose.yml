@@ -6,25 +6,33 @@ services:
     build: .
     container_name: voice_journal_daemon
     user: "0:0"
+    # Shareable IPC so the web container can join (ipc: "service:daemon")
+    # and reach the daemon's ALSA dsnoop instance for concurrent capture.
+    ipc: shareable
     group_add:
       - audio
     volumes:
-      - ${DATA_ROOT}:/data:rw
+      - ${DATA_ROOT:?Set DATA_ROOT to the external disk mount, e.g. /mnt/voice-journal}:/data:rw
       - ./models:/app/models:ro
       - ./logs:/app/logs:rw
       - ./config:/app/config:ro
+      # Bind-mount patched sources so container recreates never lose fixes
+      - ./storage/daily_journal.py:/app/storage/daily_journal.py:ro
+      # Persist whisper model cache across daemon recreates (no re-download)
+      - ./hf_cache:/root/.cache/huggingface:rw
     devices:
       - /dev/snd:/dev/snd
     environment:
       - DATA_ROOT=/data
       - TZ=Asia/Kolkata
-      - AUDIO_SAMPLE_RATE=16000
-      - AUDIO_CHANNELS=1
-      - AUDIO_BLOCK_SIZE=512
+      - VJ_AUDIO_SAMPLE_RATE=16000
+      - VJ_AUDIO_CHANNELS=1
+      - VJ_AUDIO_BLOCK_SIZE=2048
     command: ["python", "daemon.py"]
     restart: unless-stopped
     healthcheck:
       disable: true
+    # Resource limits - can be overridden in .env
     cpus: ${DAEMON_CPUS:-2.0}
     mem_limit: ${DAEMON_MEMORY:-2G}
 
@@ -32,18 +40,27 @@ services:
     build: .
     container_name: voice_journal_web
     user: "0:0"
+    ipc: "service:daemon"
+    group_add:
+      - audio
     volumes:
-      - ${DATA_ROOT}:/data:rw
+      - ${DATA_ROOT:?Set DATA_ROOT to the external disk mount, e.g. /mnt/voice-journal}:/data:rw
       - ./models:/app/models:ro
       - ./logs:/app/logs:rw
       - ./config:/app/config:ro
       - ./web/dist:/app/web/dist:ro
+      - ./web/app.py:/app/web/app.py:ro
+    devices:
+      - /dev/snd:/dev/snd
     environment:
       - DATA_ROOT=/data
       - TZ=Asia/Kolkata
       - WEB_AUTH_TOKEN=${WEB_AUTH_TOKEN:-voice-journal-secret-2026}
     command: ["python", "web/app.py", "--host", "0.0.0.0", "--port", "5000"]
     ports:
+      # HTTPS is provided by Tailscale serve -> 127.0.0.1:5000
+      # (visit https://shreyansh-hp-laptop-15-da0xxx.tail6e6a7a.ts.net).
+      # Do NOT bind 443 here: it is owned by tailscaled and nginx-proxy.
       - "5000:5000"
     restart: unless-stopped
     healthcheck:
@@ -52,6 +69,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    # Resource limits - can be overridden in .env
     cpus: ${WEB_CPUS:-1.0}
     mem_limit: ${WEB_MEMORY:-1G}
     depends_on:
