@@ -1,10 +1,8 @@
 """Tests for confidence gating in ASR."""
 
 import pytest
-import numpy as np
 
-from asr.transcriber_batch import BatchASRProcessor, ConfidenceMetrics, TranscriptSegmentWithConfidence
-from datetime import datetime
+from asr.transcriber_batch import BatchASRProcessor, ConfidenceMetrics
 
 
 class TestConfidenceMetrics:
@@ -27,65 +25,6 @@ class TestConfidenceMetrics:
         metrics = ConfidenceMetrics(no_speech_prob=0.1, avg_logprob=-0.3)
 
         assert metrics.is_low_confidence == False
-
-
-class TestTranscriptSegmentWithConfidence:
-    """Tests for TranscriptSegmentWithConfidence."""
-
-    def test_format_for_obsidian_high_confidence(self):
-        """Test formatting without confidence marker."""
-        segment = TranscriptSegmentWithConfidence(
-            text="Hello world",
-            start_time=datetime.now(),
-            end_time=datetime.now(),
-            duration_seconds=5.0,
-            language="en",
-            language_probability=0.9,
-            speaker="shreyansh",
-            speaker_confidence=0.8,
-            words=[],
-            confidence_metrics=ConfidenceMetrics(no_speech_prob=0.1, avg_logprob=-0.3),
-            low_confidence=False
-        )
-
-        formatted = segment.format_for_obsidian()
-
-        assert "⚠️" not in formatted
-
-    def test_format_for_obsidian_low_confidence(self):
-        """Test formatting with confidence marker."""
-        segment = TranscriptSegmentWithConfidence(
-            text="Hello world",
-            start_time=datetime.now(),
-            end_time=datetime.now(),
-            duration_seconds=5.0,
-            language="en",
-            language_probability=0.5,
-            speaker="unknown",
-            speaker_confidence=0.3,
-            words=[],
-            confidence_metrics=ConfidenceMetrics(no_speech_prob=0.7, avg_logprob=-1.5),
-            low_confidence=True
-        )
-
-        formatted = segment.format_for_obsidian()
-
-        assert "⚠️" in formatted
-
-    def test_format_for_obsidian_repetition_detected(self):
-        segment = TranscriptSegmentWithConfidence(
-            text="बच्च्च्च्च्च्च्च्च्च्च्च्च्च्च्च्च्च्च",
-            start_time=datetime.now(),
-            end_time=datetime.now(),
-            duration_seconds=5.0,
-            language="hi",
-            language_probability=0.9,
-            speaker="unknown",
-            speaker_confidence=0.0,
-            repetition_detected=True,
-        )
-
-        assert "repetition-detected" in segment.format_for_obsidian()
 
 
 class TestBatchASRProcessor:

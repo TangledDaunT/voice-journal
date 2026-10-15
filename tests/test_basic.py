@@ -16,7 +16,7 @@ class TestConfig:
     def test_default_config(self):
         """Test default configuration creation."""
         config = Config()
-        assert config.audio.sample_rate == 16000
+        assert config.audio.sample_rate == 48000
         assert config.asr.model_size == "large-v3"
         assert config.conversation.gap_seconds == 90.0
 

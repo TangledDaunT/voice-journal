@@ -214,7 +214,8 @@ class AudioCapture:
                 channels=self.channels,
                 blocksize=self.block_size,
                 callback=self._audio_callback,
-                dtype=np.float32
+                dtype=np.float32,
+                latency='high'  # Use larger buffer to prevent input overflow
             )
             self.stream.start()
             log_stage("AudioCapture", f"Stream started: {self.sample_rate}Hz")

@@ -1,0 +1,33 @@
+# Evaluation Harness Requirements
+# Separate venv from Docker images; CPU-only on i3
+
+# Audio I/O
+sounddevice>=0.4.6
+soundfile>=0.12.1
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Speech Recognition (faster-whisper for drafting)
+faster-whisper>=1.0.0
+
+# Evaluation metrics
+jiwer>=3.0.0
+
+# Transliteration (Devanagari to Roman)
+indic-transliteration>=1.1.10
+
+# Web UI for correction
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# YAML config
+pyyaml>=6.0
+
+# Progress bars
+tqdm>=4.66.0
+
+# Audio processing (for resampling)
+pydub>=0.25.1
+
+# Optional: for richer audio analysis
+# librosa>=0.10.1

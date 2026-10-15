@@ -63,5 +63,10 @@ tmp/
 temp/
 *.tmp
 
+# Evaluation harness (audio, drafts, references, results)
+eval/*/
+eval/results/
+eval-venv/
+
 # Voice profiles (user-specific calibration)
 config/voice_profiles.json

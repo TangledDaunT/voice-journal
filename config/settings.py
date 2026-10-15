@@ -16,20 +16,31 @@ from pydantic_settings import BaseSettings
 
 
 class AudioConfig(BaseModel):
-    sample_rate: int = 16000
+    sample_rate: int = 48000
     channels: int = 1
-    block_size: int = 512
+    block_size: int = 1024
     ring_buffer_seconds: int = 30
     keep_audio: bool = False
     audio_storage_path: str = "./audio_clips"
+    # Phase 2: Capture settings
+    capture_sample_rate: int = 48000  # CAPTURE_SAMPLE_RATE
+    capture_bit_depth: int = 16       # 16-bit
+    capture_format: str = "MP3"      # MP3 (compressed)
 
 
 class VADConfig(BaseModel):
     model_path: str = "./models/silero_vad.onnx"
-    threshold: float = Field(default=0.6, ge=0.0, le=1.0)
-    min_segment_duration: float = Field(default=0.5, ge=0.0)
+    threshold: float = Field(default=0.40, ge=0.0, le=1.0)
+    end_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
+    min_segment_duration: float = Field(default=0.25, ge=0.0)
     silence_padding: float = Field(default=0.3, ge=0.0)
-    max_segment_duration: float = Field(default=30.0, ge=1.0)
+    max_segment_duration: float = Field(default=300.0, ge=1.0)
+    # Phase 2: VAD streaming settings
+    hangover_ms: int = Field(default=1100, ge=0)
+    preroll_ms: int = Field(default=1000, ge=0)
+    postroll_ms: int = Field(default=300, ge=0)
+    merge_gap_ms: int = Field(default=2000, ge=0)
+    frame_ms: int = Field(default=32, ge=10)
 
 
 class SpeakerProfile(BaseModel):
@@ -136,6 +147,18 @@ class BacklogConfig(BaseModel):
     max_staging_hours: int = Field(default=72, ge=24)
 
 
+class NoiseFloorConfig(BaseModel):
+    """Configuration for noise-floor tracking."""
+    enabled: bool = True
+    frame_ms: int = Field(default=50, ge=10)
+    percentile: int = Field(default=10, ge=1, le=50)
+    window_minutes: int = Field(default=5, ge=1)
+    smoothing_alpha: float = Field(default=0.01, ge=0.0, le=1.0)
+    snr_threshold_db: float = Field(default=6.0, ge=0.0)
+    clip_threshold: float = Field(default=0.99, ge=0.0, le=1.0)
+    clip_fraction_threshold: float = Field(default=0.001, ge=0.0, le=1.0)
+
+
 class ConversationConfig(BaseModel):
     gap_seconds: float = Field(default=90.0, ge=1.0)
     min_segments: int = Field(default=2, ge=1)
@@ -183,6 +206,8 @@ class DaemonConfig(BaseModel):
     log_file: str = "./logs/voice_journal.log"
     mute_file: str = "./data/mute_flag"
     health_check_interval: int = Field(default=60, ge=10)
+    # Phase 2: Disk guard
+    disk_min_free_gb: int = Field(default=20, ge=1)
 
 
 class SystemConfig(BaseModel):
@@ -206,6 +231,7 @@ class Config(BaseSettings):
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     journal: JournalConfig = Field(default_factory=JournalConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
+    noise_floor: NoiseFloorConfig = Field(default_factory=NoiseFloorConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     backlog: BacklogConfig = Field(default_factory=BacklogConfig)
     system: SystemConfig = Field(default_factory=SystemConfig)
@@ -221,7 +247,7 @@ class Config(BaseSettings):
         for section in (
             "audio", "vad", "speaker", "asr", "segment_merging",
             "preprocessing", "cleanup", "conversation", "llm", "obsidian",
-            "database", "dashboard", "journal", "daemon", "scheduler",
+            "database", "dashboard", "journal", "daemon", "noise_floor", "scheduler",
             "backlog", "system",
         ):
             if data.get(section) is None:
