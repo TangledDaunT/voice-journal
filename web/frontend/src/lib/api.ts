@@ -156,3 +156,11 @@ export const calibrationApi = {
   apply: () =>
     fetch(`${API_BASE}/calibration/apply`, { method: 'POST' }).then(r => r.json()),
 }
+
+// Mute API
+export const muteApi = {
+  getStatus: () => fetch(`${API_BASE}/mute/status`).then(r => r.json()),
+
+  toggle: () =>
+    fetch(`${API_BASE}/mute`, { method: 'POST' }).then(r => r.json()),
+}

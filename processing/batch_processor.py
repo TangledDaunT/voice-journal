@@ -83,7 +83,7 @@ class StagingQueue:
         # Determine date directory (Asia/Kolkata timezone)
         from datetime import datetime, timezone
         from zoneinfo import ZoneInfo
-
+        
         # Use segment start time for date directory
         ist = ZoneInfo("Asia/Kolkata")
         if segment.start_time.tzinfo is None:
@@ -95,9 +95,8 @@ class StagingQueue:
         date_str = segment_start_ist.strftime("%Y-%m-%d")
         time_str = segment_start_ist.strftime("%H%M%S")
         
-        # Build path from configured storage root (already DATA_ROOT-expanded)
-        date_dir = Path(self.config.audio.audio_storage_path) / date_str / "segments"
-        date_dir.mkdir(parents=True, exist_ok=True)
+        # Save to flat staging directory (not date-based) for queue processing
+        self.staging_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate unique filename
         segment_id = f"{date_str}_{time_str}_{id(segment)}"
@@ -105,7 +104,7 @@ class StagingQueue:
         
         # Save audio as Opus file
         audio_filename = f"{segment_id}.opus"
-        audio_path = os.path.join(date_dir, audio_filename)
+        audio_path = os.path.join(self.staging_dir, audio_filename)
         
         # Convert and save as Opus using ffmpeg
         import subprocess
@@ -224,7 +223,27 @@ class StagingQueue:
 
     def load_segment_audio(self, segment: StagedSegment) -> SpeechSegment:
         """Load audio for a staged segment."""
-        audio = np.load(segment.audio_path)
+        # Load Opus file using soundfile (via ffmpeg fallback)
+        import subprocess
+        import tempfile
+        import numpy as np
+        
+        # Decode Opus to temporary WAV file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+            tmp_wav_path = tmp_wav.name
+        
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", segment.audio_path, "-ar", str(segment.sample_rate), "-ac", "1", tmp_wav_path],
+                check=True, capture_output=True, timeout=30
+            )
+            from scipy.io.wavfile import read
+            sr, audio_int16 = read(tmp_wav_path)
+            audio = audio_int16.astype(np.float32) / 32767.0
+        finally:
+            import os
+            os.unlink(tmp_wav_path)
+        
         if audio.ndim == 2:
             audio = audio[:, 0] if audio.shape[1] == 1 else audio.mean(axis=1)
 
@@ -237,13 +256,11 @@ class StagingQueue:
 
     def mark_processed(self, segment_id: str):
         """Mark a segment as processed (delete staged files)."""
-        # Delete audio and metadata files
-        audio_path = self.staging_dir / f"{segment_id}.npy"
-        metadata_path = self.staging_dir / f"{segment_id}.json"
-
-        for path in [audio_path, metadata_path]:
-            if path.exists():
-                path.unlink()
+        # Delete audio and metadata files (opus/json, not npy/json)
+        for ext in [".opus", ".wav", ".json"]:
+            audio_path = self.staging_dir / f"{segment_id}{ext}"
+            if audio_path.exists():
+                audio_path.unlink()
 
         # Update backlog
         self.backlog_tracker.remove_segment(segment_id)
@@ -261,13 +278,16 @@ class BatchProcessor:
     Runs the full pipeline (merge → preprocess → ASR → speaker ID → grouping → LLM → output).
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, disable_denoising: bool = False):
         self.config = config
+        if disable_denoising:
+            self.config = config.model_copy(deep=True)
+            self.config.preprocessing.enable_denoising = False
 
         # Components
-        self.staging_queue = StagingQueue(config)
-        self.segment_merger = SegmentMerger(config)
-        self.preprocessor = AudioPreprocessor(config)
+        self.staging_queue = StagingQueue(self.config)
+        self.segment_merger = SegmentMerger(self.config)
+        self.preprocessor = AudioPreprocessor(self.config)
 
         # Will be initialized lazily (heavy models)
         self._asr_processor = None
@@ -435,13 +455,18 @@ class BatchProcessor:
 
         for conversation in conversations:
             try:
-                # Cleanup is optional and never replaces the raw ASR transcript.
-                # Cleanup removed - using raw transcript
-                cleanup = type("Cleanup", (), {"cleaned_transcript": conversation.get_raw_transcript(), "raw_transcript": conversation.get_raw_transcript()})()
+                # Use transcript_text (plain) for raw, full_transcript (formatted) for cleaned
+                raw_transcript = conversation.transcript_text
+                cleaned_transcript = conversation.full_transcript
 
-                # Classify the readable version while retaining raw text for storage.
-                # Classification removed - using default
-                classification = type("Classification", (), {"source_type": "unknown", "confidence": 0.0})()
+                # Classification - provide required attributes for SQLiteStore
+                classification = type("Classification", (), {
+                    "source_type": "unknown",
+                    "confidence": 0.0,
+                    "is_shivangi_conversation": False,
+                    "quality": "unknown",
+                    "summary": ""
+                })()
 
                 self._cache_conversation_audio(conversation, audio_by_transcript_id)
                 note_path = None
@@ -451,8 +476,8 @@ class BatchProcessor:
                     conversation,
                     classification,
                     note_path,
-                    raw_transcript=cleanup.raw_transcript,
-                    cleaned_transcript=cleanup.cleaned_transcript
+                    raw_transcript=raw_transcript,
+                    cleaned_transcript=cleaned_transcript
                 )
 
                 conversations_created += 1

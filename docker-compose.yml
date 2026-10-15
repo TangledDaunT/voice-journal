@@ -28,7 +28,7 @@ services:
       - VJ_AUDIO_SAMPLE_RATE=16000
       - VJ_AUDIO_CHANNELS=1
       - VJ_AUDIO_BLOCK_SIZE=2048
-    command: ["python", "daemon.py"]
+    command: ["python", "daemon_v2.py", "--config", "/app/config/default_config.yaml"]
     restart: unless-stopped
     healthcheck:
       disable: true
@@ -56,6 +56,8 @@ services:
       - DATA_ROOT=/data
       - TZ=Asia/Kolkata
       - WEB_AUTH_TOKEN=${WEB_AUTH_TOKEN:-voice-journal-secret-2026}
+      - WEB_AUTH_USERNAME=Shreyansh
+      - WEB_AUTH_PASSWORD=Shreyanshlovesshivangi@7754008079
     command: ["python", "web/app.py", "--host", "0.0.0.0", "--port", "5000"]
     ports:
       # HTTPS is provided by Tailscale serve -> 127.0.0.1:5000

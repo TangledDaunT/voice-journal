@@ -3,23 +3,23 @@
 
 # Audio Capture (Stage 1) - Still runs near-real-time
 audio:
-  sample_rate: 48000
+  sample_rate: 16000
   channels: 1
-  block_size: 1024
+  block_size: 4096
   ring_buffer_seconds: 30
   keep_audio: false
   audio_storage_path: "${DATA_ROOT:-/home/shreyansh/NAS}/voice-journal/audio"
   # Phase 2: Capture settings
-  capture_sample_rate: 48000  # CAPTURE_SAMPLE_RATE
+  capture_sample_rate: 16000  # CAPTURE_SAMPLE_RATE
   capture_bit_depth: 16       # 16-bit
   capture_format: "MP3"       # MP3 (compressed)
 
 # VAD (Stage 2) - Runs near-real-time, segments stored for batch processing
 vad:
   model_path: "./models/silero_vad.onnx"
-  threshold: 0.40             # VAD_THRESHOLD
-  end_threshold: 0.25         # start - 0.15 hysteresis
-  min_segment_duration: 0.25  # VAD_MIN_SPEECH_MS=250
+  threshold: 0.45             # VAD_THRESHOLD - balanced for speech detection
+  end_threshold: 0.25         # start - 0.20 hysteresis
+  min_segment_duration: 0.50  # VAD_MIN_SPEECH_MS=500
   silence_padding: 0.3
   max_segment_duration: 300.0 # MAX_SEGMENT_SEC
   # Phase 2: VAD streaming settings
@@ -44,7 +44,7 @@ asr:
   compression_ratio_threshold: 2.4
   no_repeat_ngram_size: 3
   repetition_penalty: 1.3
-  vad_filter: true
+  vad_filter: false
   condition_on_previous_text: false  # Prevent hallucination cascade
 
   # Vocabulary biasing - only proper nouns that Whisper might mistranscribe
@@ -89,7 +89,7 @@ journal:
 daemon:
   log_level: "INFO"
   log_file: "./logs/voice_journal.log"
-  mute_file: "./data/mute_flag"
+  mute_file: "/data/voice-journal/mute_flag"
   health_check_interval: 60
   # Phase 2: Disk guard
   disk_min_free_gb: 20
@@ -107,7 +107,7 @@ noise_floor:
 
 # Audio Preprocessing (new stage)
 preprocessing:
-  enable_denoising: true
+  enable_denoising: false
   denoising_method: "noisereduce"  # or "rnnoise"
   gain_normalization: true
   target_db: -20.0  # Target loudness in dB

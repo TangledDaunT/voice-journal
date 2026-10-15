@@ -8,16 +8,15 @@ import os
 import time
 import json
 import threading
-from queue import Queue
-from glob import glob as glob_files
+from functools import wraps
+from pathlib import Path
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, render_template, jsonify, request, send_from_directory, Response, send_file
 from flask_cors import CORS
 from datetime import datetime, timedelta
-from pathlib import Path
 import sqlite3
-import subprocess
 from config.settings import Config
 
 app = Flask(__name__, static_folder='dist', static_url_path='')
@@ -33,8 +32,41 @@ AUDIO_CACHE_PATH = Path(APP_CONFIG.dashboard.audio_cache_path)
 
 # Remote daemon control - runs locally since web server is on same machine
 REMOTE_HOST = "localhost"
-MUTE_STATE_FILE = Path("/tmp/vj_mute_state")
+MUTE_FILE = Path("/data/voice-journal/mute_flag")
 DAEMON_SERVICE = "vj-daemon"
+
+# Authentication
+AUTH_USERNAME = os.environ.get("WEB_AUTH_USERNAME", "Shreyansh")
+AUTH_PASSWORD = os.environ.get("WEB_AUTH_PASSWORD", "Shreyanshlovesshivangi@7754008079")
+
+def require_auth(f):
+    """Decorator to require HTTP Basic Auth."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or auth.username != AUTH_USERNAME or auth.password != AUTH_PASSWORD:
+            return jsonify({"error": "Authentication required"}), 401, {
+                'WWW-Authenticate': 'Basic realm="Voice Journal"'
+            }
+        return f(*args, **kwargs)
+    return decorated
+
+# Apply auth to all routes except health check
+@app.before_request
+def check_auth():
+    # Skip auth for health check and static files
+    if request.path in ['/api/health', '/health']:
+        return None
+    if request.path.startswith('/assets/') or request.path.startswith('/vite.svg'):
+        return None
+    # Apply auth to all API routes and dashboard
+    if request.path.startswith('/api/') or request.path in ['/', '/dashboard', '/conversations', '/calibration', '/settings', '/audio-test']:
+        auth = request.authorization
+        if not auth or auth.username != AUTH_USERNAME or auth.password != AUTH_PASSWORD:
+            return jsonify({"error": "Authentication required"}), 401, {
+                'WWW-Authenticate': 'Basic realm="Voice Journal"'
+            }
+    return None
 
 # Real-time update subscribers
 subscribers = []
@@ -694,8 +726,8 @@ def run_local_command(command):
 def get_mute_status():
     """Get current mute status."""
     try:
-        if MUTE_STATE_FILE.exists():
-            mute_state = MUTE_STATE_FILE.read_text().strip()
+        if MUTE_FILE.exists():
+            mute_state = MUTE_FILE.read_text().strip()
             return jsonify({"muted": mute_state == "muted"})
 
         return jsonify({"muted": False})
@@ -706,47 +738,21 @@ def get_mute_status():
 
 @app.route('/api/mute', methods=['POST'])
 def toggle_mute():
-    """Toggle mute state on the daemon by restarting it."""
+    """Toggle mute state by writing to the mute file that the daemon checks."""
     try:
         current_muted = False
-        if MUTE_STATE_FILE.exists():
-            current_state = MUTE_STATE_FILE.read_text().strip()
+        if MUTE_FILE.exists():
+            current_state = MUTE_FILE.read_text().strip()
             current_muted = current_state == "muted"
 
         new_state = not current_muted
         new_state_str = "muted" if new_state else "unmuted"
-        MUTE_STATE_FILE.write_text(new_state_str)
-
-        systemctl_result = run_local_command(f"systemctl --user status {DAEMON_SERVICE} 2>&1")
-
-        if "active" in systemctl_result.get("output", "") or "running" in systemctl_result.get("output", ""):
-            if new_state:
-                run_local_command(f"systemctl --user stop {DAEMON_SERVICE}")
-                run_local_command(f"systemctl --user start {DAEMON_SERVICE} --mute")
-            else:
-                run_local_command(f"systemctl --user restart {DAEMON_SERVICE}")
-        else:
-            find_result = run_local_command("pgrep -f 'python.*daemon' || true")
-            daemon_pids = find_result.get("output", "").strip()
-
-            if daemon_pids:
-                for pid in daemon_pids.split("\n"):
-                    if pid.strip():
-                        run_local_command(f"kill {pid.strip()} 2>/dev/null || true")
-
-            time.sleep(1)
-
-            daemon_path = BASE_DIR / "daemon.py"
-            venv_python = BASE_DIR / "venv" / "bin" / "python3"
-
-            if new_state:
-                run_local_command(f"cd {BASE_DIR} && nohup {venv_python} {daemon_path} --mute > {BASE_DIR}/daemon_muted.log 2>&1 &")
-            else:
-                run_local_command(f"cd {BASE_DIR} && nohup {venv_python} {daemon_path} > {BASE_DIR}/daemon.log 2>&1 &")
+        MUTE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        MUTE_FILE.write_text(new_state_str)
 
         return jsonify({
             "muted": new_state,
-            "message": f"Daemon restarted ({new_state_str})"
+            "message": f"Microphone {new_state_str}"
         })
 
     except Exception as e:
@@ -788,14 +794,23 @@ def get_calibration_status():
 
         # Get audio device info
         import sounddevice as sd
-        input_device = sd.query_devices(kind='input')
+        try:
+            input_device = sd.query_devices(kind='input')
+            device_name = input_device['name']
+        except Exception:
+            # Fallback: try hw:0,0 directly
+            try:
+                hw_dev = sd.query_devices(device='hw:0,0')
+                device_name = hw_dev['name']
+            except Exception:
+                device_name = "hw:0,0 (ALC236 Analog)"
 
         return jsonify({
             "status": calibration_state["status"],
             "has_silent_baseline": profile is not None,
             "silent_baseline": profile,
             "voice_profiles": voices,
-            "current_input_device": input_device['name']
+            "current_input_device": device_name
         })
     except Exception as e:
         return jsonify({"error": str(e), "status": "error"})
@@ -813,8 +828,32 @@ def start_silent_calibration():
         # Record 5 seconds of "silence"
         duration = 5
         sample_rate = 16000
-        recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
-        sd.wait()
+
+        # Try to find an available input device that's not exclusively used by the daemon
+        devices = sd.query_devices()
+        input_device_idx = None
+        for i, d in enumerate(devices):
+            if d['max_input_channels'] > 0 and d['name'] != 'default':
+                input_device_idx = i
+                break
+
+        if input_device_idx is None:
+            input_device_idx = sd.default.device[0]
+
+        try:
+            recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, device=input_device_idx)
+            sd.wait()
+        except (sd.PortAudioError, ValueError):
+            try:
+                recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, device='sysdefault')
+                sd.wait()
+            except (sd.PortAudioError, ValueError):
+                calibration_state["status"] = "error"
+                return jsonify({
+                    "success": False,
+                    "error": "Audio device is in use by the daemon. The daemon is actively capturing audio.",
+                    "device_in_use": True
+                })
 
         # Calculate noise floor metrics
         rms = float(np.sqrt(np.mean(recording**2)))
@@ -869,8 +908,32 @@ def start_voice_calibration():
         # Record 5 seconds of voice
         duration = 5
         sample_rate = 16000
-        recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
-        sd.wait()
+
+        # Try to find an available input device that's not exclusively used by the daemon
+        devices = sd.query_devices()
+        input_device_idx = None
+        for i, d in enumerate(devices):
+            if d['max_input_channels'] > 0 and d['name'] != 'default':
+                input_device_idx = i
+                break
+
+        if input_device_idx is None:
+            input_device_idx = sd.default.device[0]
+
+        try:
+            recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, device=input_device_idx)
+            sd.wait()
+        except (sd.PortAudioError, ValueError):
+            try:
+                recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, device='sysdefault')
+                sd.wait()
+            except (sd.PortAudioError, ValueError):
+                calibration_state["status"] = "error"
+                return jsonify({
+                    "success": False,
+                    "error": "Audio device is in use by the daemon. The daemon is actively capturing audio.",
+                    "device_in_use": True
+                })
 
         # Extract voice characteristics
         rms = float(np.sqrt(np.mean(recording**2)))
@@ -929,8 +992,32 @@ def test_audio_levels():
         duration = 3
         sample_rate = 16000
 
-        recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
-        sd.wait()
+        # Try to find an available input device that's not exclusively used by the daemon
+        devices = sd.query_devices()
+        input_device_idx = None
+        for i, d in enumerate(devices):
+            if d['max_input_channels'] > 0 and d['name'] != 'default':
+                input_device_idx = i
+                break
+
+        # If no alternative device, try default but handle gracefully
+        if input_device_idx is None:
+            input_device_idx = sd.default.device[0]
+
+        try:
+            recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, device=input_device_idx)
+            sd.wait()
+        except (sd.PortAudioError, ValueError):
+            # Device is in use by daemon - try with sysdefault
+            try:
+                recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, device='sysdefault')
+                sd.wait()
+            except (sd.PortAudioError, ValueError):
+                return jsonify({
+                    "success": False,
+                    "error": "Audio device is in use by the daemon. The daemon is actively capturing audio. You can verify audio is being captured by checking the dashboard for new conversations.",
+                    "device_in_use": True
+                })
 
         # Calculate levels
         rms = float(np.sqrt(np.mean(recording**2)))
@@ -1008,6 +1095,21 @@ def get_audio_devices():
                     "is_default": i == sd.default.device[0]
                 })
 
+        # If no input devices found via default enumeration, try hw:0,0 directly
+        if not input_devices:
+            try:
+                hw_dev = sd.query_devices(device='hw:0,0')
+                if hw_dev and hw_dev['max_input_channels'] > 0:
+                    input_devices.append({
+                        "index": 0,
+                        "name": hw_dev['name'],
+                        "channels": hw_dev['max_input_channels'],
+                        "default_sample_rate": hw_dev['default_samplerate'],
+                        "is_default": True
+                    })
+            except Exception:
+                pass
+
         return jsonify(input_devices)
     except Exception as e:
         return jsonify({"error": str(e)})
@@ -1056,9 +1158,30 @@ def record_audio_test():
         duration = data.get('duration', 5)  # seconds
         sample_rate = data.get('sample_rate', 16000)
 
-        # Record audio
-        recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
-        sd.wait()
+        # Try to find an available input device that's not exclusively used by the daemon
+        devices = sd.query_devices()
+        input_device_idx = None
+        for i, d in enumerate(devices):
+            if d['max_input_channels'] > 0 and d['name'] != 'default':
+                input_device_idx = i
+                break
+
+        if input_device_idx is None:
+            input_device_idx = sd.default.device[0]
+
+        try:
+            recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, device=input_device_idx)
+            sd.wait()
+        except (sd.PortAudioError, ValueError):
+            try:
+                recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, device='sysdefault')
+                sd.wait()
+            except (sd.PortAudioError, ValueError):
+                return jsonify({
+                    "success": False,
+                    "error": "Audio device is in use by the daemon. The daemon is actively capturing audio.",
+                    "device_in_use": True
+                })
 
         # Save to WAV file
         filename = f"test_{uuid.uuid4().hex[:8]}.wav"
@@ -1247,8 +1370,14 @@ def speaker_test():
         t = np.linspace(0, duration, int(sample_rate * duration), False)
         tone = np.sin(frequency * 2 * np.pi * t) * 0.5  # 50% volume
 
-        sd.play(tone, sample_rate)
-        sd.wait()
+        try:
+            sd.play(tone, sample_rate)
+            sd.wait()
+        except sd.PortAudioError as e:
+            return jsonify({
+                "success": False,
+                "error": f"Audio output device error: {e}. The daemon may be using the audio device."
+            })
 
         return jsonify({
             "success": True,
@@ -1492,10 +1621,19 @@ if __name__ == '__main__':
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
     parser.add_argument('--port', type=int, default=5000, help='Port to listen on')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--ssl', action='store_true', help='Enable HTTPS')
+    parser.add_argument('--cert', default=None, help='Path to SSL certificate')
+    parser.add_argument('--key', default=None, help='Path to SSL private key')
 
     args = parser.parse_args()
+
+    ssl_context = None
+    if args.ssl:
+        cert_file = args.cert or "/app/tls/cert.pem"
+        key_file = args.key or "/app/tls/key.pem"
+        ssl_context = (cert_file, key_file)
 
     # Create templates directory if not exists
     os.makedirs(BASE_DIR / "web" / "templates", exist_ok=True)
 
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    app.run(host=args.host, port=args.port, debug=args.debug, ssl_context=ssl_context)

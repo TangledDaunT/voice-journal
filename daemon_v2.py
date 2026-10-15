@@ -200,7 +200,7 @@ class VoiceJournalDaemon:
         """Worker thread for VAD processing and staging."""
         audio_buffer = []
         buffer_duration = 0.0
-        buffer_max = 1800.0  # Process every 30 minutes
+        buffer_max = 30.0  # Process every 30 seconds (was 1800 = 30 min bug)
 
         while self.is_running and not self._shutdown_requested:
             try:

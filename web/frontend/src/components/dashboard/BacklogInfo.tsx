@@ -3,6 +3,7 @@ import { Clock, AlertCircle, CheckCircle } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { useQuery } from '@tanstack/react-query'
 import { fetchBacklog } from '@/lib/api'
+import { MuteStatus } from './MuteButton'
 
 export function BacklogInfo() {
   const { data: backlog, isLoading } = useQuery({
@@ -47,6 +48,7 @@ export function BacklogInfo() {
                 </p>
               </div>
             </div>
+            <MuteStatus />
           </div>
         </CardContent>
       </Card>
