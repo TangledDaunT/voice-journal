@@ -5,6 +5,7 @@ import { StatsGrid } from '@/components/dashboard/StatsGrid'
 import { WeeklyChart } from '@/components/dashboard/WeeklyChart'
 import { ShivangiPanel } from '@/components/dashboard/ShivangiPanel'
 import { RecentConversations } from '@/components/dashboard/RecentConversations'
+import { LiveMicrophone } from '@/components/dashboard/LiveMicrophone'
 import { BacklogInfo } from '@/components/dashboard/BacklogInfo'
 
 export function Dashboard() {
@@ -15,18 +16,17 @@ export function Dashboard() {
   const { data: conversations, isLoading: convLoading } = useQuery({
     queryKey: ['conversations'],
     queryFn: () => fetchConversations(undefined, 20),
-    refetchInterval: 30000
+    refetchInterval: 5000
   })
   const { data: weekly } = useQuery({ queryKey: ['weekly'], queryFn: fetchWeeklySummary })
   const { data: shivangiStats } = useQuery({ queryKey: ['shivangi'], queryFn: () => fetchShivangiStats(30) })
 
   return (
     <div className="space-y-6">
-      {/* Stats Grid */}
-      <StatsGrid stats={stats ?? null} />
-
-      {/* Backlog Status */}
+      <div className="mb-8"><p className="eyebrow">Your personal audio archive</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">Room for every thought.</h1><p className="mt-2 text-muted-foreground">Your spoken moments, captured and ready to revisit.</p></div>
       <BacklogInfo />
+      <LiveMicrophone />
+      <StatsGrid stats={stats ?? null} />
 
       {/* Two Column Layout */}
       <div className="grid gap-6 lg:grid-cols-2">

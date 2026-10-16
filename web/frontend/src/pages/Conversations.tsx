@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Search, Calendar, X } from 'lucide-react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { Search, Calendar, ArrowLeft, Headphones, FileText } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchConversations, fetchConversation, searchConversations, Conversation } from '@/lib/api'
+import { fetchConversations, fetchConversation, searchConversations } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -11,155 +11,27 @@ import { ConversationCard } from '@/components/conversations/ConversationCard'
 
 export function Conversations() {
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedDate, setSelectedDate] = useState<string>('')
-  const [selectedConv, setSelectedConv] = useState<Conversation | null>(null)
-
-  const { data: conversations, isLoading } = useQuery({
-    queryKey: ['conversations', selectedDate],
-    queryFn: () => fetchConversations(selectedDate || undefined, 200),
-  })
-
-  const { data: searchResults, isLoading: searchLoading } = useQuery({
-    queryKey: ['search', searchQuery],
-    queryFn: () => searchConversations(searchQuery),
-    enabled: searchQuery.length > 2,
-  })
-
-  const displayConversations = searchQuery.length > 2 ? searchResults : conversations
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-bold">Journal</h1>
-          <p className="text-muted-foreground">All your conversations in one place</p>
-        </div>
-
-        <div className="flex gap-2">
-          <div className="relative flex-1 md:w-80">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search conversations..."
-              className="w-full rounded-lg border border-input bg-background py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2"
-              >
-                <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-              </button>
-            )}
-          </div>
-
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-        </div>
-      </div>
-
-      {/* Conversations List */}
-      {isLoading || searchLoading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="h-40 animate-pulse rounded-lg bg-muted/20" />
-          ))}
-        </div>
-      ) : displayConversations?.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <Calendar className="h-12 w-12 text-muted-foreground/50" />
-            <p className="mt-4 text-lg font-medium">No conversations found</p>
-            <p className="text-muted-foreground">
-              {searchQuery ? 'Try a different search term' : 'No entries for this date'}
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <motion.div
-          className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
-          initial="hidden"
-          animate="visible"
-          variants={{
-            visible: { transition: { staggerChildren: 0.05 } },
-          }}
-        >
-          {displayConversations?.map((conv) => (
-            <ConversationCard
-              key={conv.conversation_id}
-              conversation={conv}
-              onClick={async () => setSelectedConv(await fetchConversation(conv.conversation_id))}
-            />
-          ))}
-        </motion.div>
-      )}
-
-      {/* Detail Modal */}
-      <Dialog open={!!selectedConv} onOpenChange={() => setSelectedConv(null)}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-          {selectedConv && (
-            <>
-              <DialogHeader>
-                <DialogTitle>
-                  {formatDate(selectedConv.date)} at {formatTime(selectedConv.start_time)}
-                </DialogTitle>
-              </DialogHeader>
-
-              <div className="space-y-4">
-                {/* Meta */}
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">{formatDuration(selectedConv.duration_seconds)}</Badge>
-                  {selectedConv.participants?.map((p) => (
-                    <Badge key={p} variant="secondary">{p}</Badge>
-                  ))}
-                  {selectedConv.languages?.map((l) => (
-                    <Badge key={l}>{l}</Badge>
-                  ))}
-                  {selectedConv.is_shivangi_conversation && (
-                    <Badge variant="shivangi">♥ Shivangi</Badge>
-                  )}
-                </div>
-
-                {/* Summary */}
-                {selectedConv.summary && (
-                  <div>
-                    <h4 className="text-sm font-medium text-muted-foreground">Summary</h4>
-                    <p className="mt-1">{selectedConv.summary}</p>
-                  </div>
-                )}
-
-                {/* Transcript */}
-                {(selectedConv.cleaned_transcript || selectedConv.transcript) && (
-                  <div>
-                    <h4 className="mb-2 text-sm font-medium text-muted-foreground">Cleaned Transcript</h4>
-                    <pre className="whitespace-pre-wrap rounded-lg bg-muted/30 p-4 font-mono text-sm">
-                      {selectedConv.cleaned_transcript || selectedConv.transcript}
-                    </pre>
-                  </div>
-                )}
-                {selectedConv.audio_url && (
-                  <audio className="w-full" controls preload="metadata" src={selectedConv.audio_url} />
-                )}
-                {(selectedConv.raw_transcript || selectedConv.transcript) && (
-                  <details>
-                    <summary className="cursor-pointer text-sm font-medium text-muted-foreground">Raw Transcript</summary>
-                    <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-muted/30 p-4 font-mono text-sm">
-                      {selectedConv.raw_transcript || selectedConv.transcript}
-                    </pre>
-                  </details>
-                )}
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
+  const [selectedDate, setSelectedDate] = useState('')
+  const [full, setFull] = useState(true)
+  const [original, setOriginal] = useState(false)
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const notes = useQuery({ queryKey: ['conversations', selectedDate], queryFn: () => fetchConversations(selectedDate || undefined, 200), refetchInterval: 4000 })
+  const search = useQuery({ queryKey: ['search', searchQuery], queryFn: () => searchConversations(searchQuery), enabled: searchQuery.length > 2 })
+  const detail = useQuery({ queryKey: ['conversation', id], queryFn: () => fetchConversation(Number(id)), enabled: !!id, retry: false, refetchInterval: 4000 })
+  const conversation = detail.data
+  const display = searchQuery.length > 2 ? search : notes
+  const grouped = (display.data || []).reduce<Record<string, NonNullable<typeof display.data>>>((groups, note) => { (groups[note.date] ||= []).push(note); return groups }, {})
+  const close = () => { navigate('/conversations'); setOriginal(false) }
+  return <div className="space-y-8">
+    <div className="flex flex-wrap items-end justify-between gap-5"><div><p className="eyebrow">A record of your days</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">Your spoken journal</h1><p className="mt-2 text-muted-foreground">Open a note to read your words and listen back.</p></div><div className="flex max-w-full flex-wrap gap-3"><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><input aria-label="Search journal" placeholder="Search your words…" className="rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 text-sm" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} /></div><input aria-label="Filter by date" type="date" className="rounded-xl border border-border bg-card px-3 py-2 text-sm" value={selectedDate} onChange={event => setSelectedDate(event.target.value)} /></div></div>
+    {display.isError && <p role="alert" className="rounded-xl bg-destructive/10 p-4 text-destructive">{display.error.message}</p>}
+    {display.isLoading ? <p className="text-muted-foreground">Loading journal…</p> : display.data?.length === 0 ? <Card className="border-dashed"><CardContent className="flex flex-col items-center py-16 text-center"><Calendar className="h-9 w-9 text-muted-foreground" /><p className="mt-4 text-lg font-medium">No notes for this view</p><p className="mt-2 text-sm text-muted-foreground">Captured speech or imported journal entries will appear here.</p></CardContent></Card> : Object.entries(grouped).map(([day, entries]) => <section key={day} className="space-y-4"><div className="flex items-center gap-3"><h2 className="text-sm font-semibold">{formatDate(day)}</h2><span className="text-xs text-muted-foreground">{entries.length} notes</span><div className="h-px flex-1 bg-border" /></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{entries.map(note => <ConversationCard key={note.conversation_id} conversation={note} onClick={() => { setOriginal(false); navigate(`/conversations/${note.conversation_id}`) }} />)}</div></section>)}
+    <Dialog open={!!id} onOpenChange={open => { if (!open) close() }}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-primary" />{conversation ? `${formatDate(conversation.date)} · ${formatTime(conversation.start_time)}` : 'Journal note'}</DialogTitle></DialogHeader>
+      {detail.isLoading && <p className="py-8 text-muted-foreground">Opening your note…</p>}{detail.isError && <div role="alert" className="py-6"><p className="text-destructive">Could not open this note. {detail.error.message}</p><button className="mt-4 flex items-center gap-2 text-primary" onClick={close}><ArrowLeft className="h-4 w-4" />Back to journal</button></div>}
+      {conversation && <div className="space-y-6"><div className="flex flex-wrap gap-2"><Badge variant="outline">{formatDuration(conversation.duration_seconds)}</Badge><Badge variant="secondary">{conversation.engine || 'legacy'}</Badge>{conversation.participants.map(person => <Badge variant="outline" key={person}>{person}</Badge>)}{conversation.languages.map(language => <Badge key={language} variant="outline">{language}</Badge>)}</div>{conversation.review_flags?.length ? <p role="status" className="rounded-xl bg-destructive/10 p-4 text-sm text-destructive">Needs review: {conversation.review_flags.join(', ').replace(/_/g, ' ')}. Compare the text with the audio.</p> : null}<div><p className="metric-label">Original transcript</p><div className="mt-3 whitespace-pre-wrap text-base leading-8">{conversation.turns?.length ? conversation.turns.map((turn, index) => <p key={index} className="mb-3"><span className="mr-2 text-xs text-muted-foreground">{new Date(turn.start_ts).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} · {turn.speaker}</span>{turn.text}</p>) : conversation.raw_transcript || 'No words were returned for this segment.'}</div></div>
+        {conversation.audio_url ? <div className="rounded-2xl border border-border bg-muted/5 p-5"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="flex items-center gap-2 text-sm font-medium"><Headphones className="h-4 w-4" />Listen to this note</p>{!(full && conversation.full_audio_url) && conversation.original_audio_url && conversation.original_audio_url !== conversation.audio_url && <div className="flex rounded-lg bg-muted/10 p-1">{[false, true].map(value => <button key={String(value)} aria-pressed={original === value} onClick={() => setOriginal(value)} className={`rounded-md px-3 py-1.5 text-xs ${original === value ? 'bg-card shadow-sm' : 'text-muted-foreground'}`}>{value ? 'Original' : 'Noise reduced'}</button>)}</div>}</div>{conversation.full_audio_url && <div className="mb-4 flex gap-2">{[true, false].map(value => <button key={String(value)} aria-pressed={full === value} onClick={() => setFull(value)} className={`rounded-lg border px-3 py-2 text-xs ${full === value ? 'bg-primary/10' : ''}`}>{value ? 'Full recording' : 'Verified speech'}</button>)}</div>}<audio key={`${id}-${original}-${full}`} className="w-full" controls preload="metadata" src={full && conversation.full_audio_url ? conversation.full_audio_url : original ? conversation.original_audio_url || conversation.audio_url : conversation.audio_url} /><p className="mt-3 text-xs leading-relaxed text-muted-foreground">{conversation.engine === 'legacy' ? 'Stored recording from your existing archive.' : 'Full recording includes retained room audio around this note, including unverified voices. Verified speech contains gaps where the voice check rejected audio. Transcription still requires an enrolled voice. Missing microphone samples cannot be restored.'}</p></div> : <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">{conversation.engine === 'imported' ? 'Imported from CSV. No recording was included.' : 'No recording is available for this stored note.'}</p>}
+      </div>}
+    </DialogContent></Dialog>
+  </div>
 }
