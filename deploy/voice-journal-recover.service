@@ -1,0 +1,8 @@
+[Unit]
+Description=Reconnect Voice Journal to its external journal drive
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/sbin/voice-journal-recover
+TimeoutStartSec=100

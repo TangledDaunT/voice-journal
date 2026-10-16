@@ -1,0 +1,8 @@
+[Unit]
+Description=Check Voice Journal drive and container recovery
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=30
+AccuracySec=5
+[Install]
+WantedBy=timers.target
