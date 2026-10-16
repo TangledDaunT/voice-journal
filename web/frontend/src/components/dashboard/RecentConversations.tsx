@@ -82,10 +82,11 @@ export function RecentConversations({ conversations, isLoading }: RecentConversa
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground line-clamp-1">
-                  {conv.summary || 'No summary'}
+                  {conv.raw_transcript || 'Transcript unavailable'}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {conv.is_shivangi_conversation && (
+                  {conv.review_flags?.length ? <Badge variant="outline">Needs review</Badge> : null}
+            {conv.is_shivangi_conversation && (
                     <Badge variant="shivangi">♥ Shivangi</Badge>
                   )}
                   {conv.quality && conv.quality !== 'not_applicable' && (
