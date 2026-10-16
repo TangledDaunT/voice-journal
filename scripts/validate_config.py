@@ -6,7 +6,10 @@ Checks that config is valid and all dependencies are installed.
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from config.settings import Config
+from utils.storage_guard import StorageUnavailableError, require_external_storage
 
 
 def check_dependencies():
@@ -77,7 +80,7 @@ def check_config(config_path: str = None):
         if config_path:
             config = Config.from_yaml(config_path)
         else:
-            config = Config()
+            config = Config.from_yaml(str(Path(__file__).resolve().parents[1] / "config/default_config.yaml"))
 
         # Check model size
         valid_sizes = {"tiny", "base", "small", "medium", "large-v3", "large-v2", "distil-large-v3"}
@@ -89,20 +92,11 @@ def check_config(config_path: str = None):
         if config.asr.compute_type not in valid_compute:
             issues.append(f"Invalid ASR compute_type: {config.asr.compute_type}")
 
-        # Check directories exist or can be created
-        paths_to_check = [
-            config.audio.audio_storage_path,
-            config.obsidian.vault_path,
-            config.database.path
-        ]
-
-        for path_str in paths_to_check:
-            path = Path(path_str)
-            if not path.exists():
-                try:
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                except Exception as e:
-                    issues.append(f"Cannot create directory {path}: {e}")
+        # Validation must never create an internal-disk fallback directory.
+        try:
+            require_external_storage(config)
+        except StorageUnavailableError as exc:
+            issues.append(str(exc))
 
         # Check scheduler config
         if config.scheduler.cpu_idle_threshold > 100 or config.scheduler.cpu_idle_threshold < 0:

@@ -39,25 +39,11 @@ start_services() {
     
     echo -e "${GREEN}Starting Voice Journal services...${NC}"
     
-    # Check if DATA_ROOT is set and valid
     if [ -z "$DATA_ROOT" ]; then
-        echo -e "${YELLOW}DATA_ROOT not set, attempting auto-detection...${NC}"
-        # Try to auto-detect external drive
-        DATA_ROOT=$(find /media /mnt -maxdepth 2 -type f -name '.mounted' 2>/dev/null | head -1 | xargs -I{} dirname {})
-        if [ -z "$DATA_ROOT" ]; then
-            # Fallback to checking for large mounted drives
-            DATA_ROOT=$(lsblk -o MOUNTPOINT,SIZE | awk '$2 >= 900G {print $1}' | head -1)
-        fi
-        if [ -z "$DATA_ROOT" ]; then
-            echo -e "${RED}ERROR: Could not auto-detect external drive. Please set DATA_ROOT in $ENV_FILE${NC}"
-            exit 1
-        fi
-        echo -e "${GREEN}Auto-detected DATA_ROOT: $DATA_ROOT${NC}"
-        # Update .env file
-        sed -i "s|^DATA_ROOT=.*|DATA_ROOT=$DATA_ROOT|" "$ENV_FILE"
-        load_env
+        echo -e "${RED}ERROR: Set DATA_ROOT=/mnt/music-drive in $ENV_FILE${NC}"
+        exit 1
     fi
-    
+
     # Check if DATA_ROOT is mounted
     if ! mountpoint -q "$DATA_ROOT"; then
         echo -e "${RED}ERROR: DATA_ROOT ($DATA_ROOT) is not mounted. Please connect your external drive.${NC}"
