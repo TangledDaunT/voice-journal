@@ -26,8 +26,12 @@ def temp_dir():
 def test_config(temp_dir):
     """Create a config with temporary paths."""
     config = Config()
-    config.database.path = str(temp_dir / "test.db")
+    config.speaker.enrolled_only = False  # Legacy ASR tests isolate transcription from enrollment.
+    (temp_dir / "db").mkdir(exist_ok=True)
+    config.database.path = str(temp_dir / "db" / "test.db")
     config.audio.audio_storage_path = str(temp_dir / "audio")
+    config.dashboard.audio_cache_path = str(temp_dir / "cache")
+    config.journal.storage_path = str(temp_dir / "journal")
     config.obsidian.vault_path = str(temp_dir / "vault")
     return config
 
@@ -77,3 +81,11 @@ def batch_speech_segments():
         segments.append(seg)
 
     return segments
+
+@pytest.fixture(autouse=True)
+def stable_test_power(monkeypatch):
+    """Unit tests must not depend on whether the developer's laptop is plugged in.
+
+    Battery-specific tests override this default explicitly.
+    """
+    monkeypatch.setattr('psutil.sensors_battery', lambda: None)
