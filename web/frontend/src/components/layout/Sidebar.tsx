@@ -83,8 +83,8 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
       <div className="border-t border-border/50 p-4">
         {isOpen ? (
           <div className="text-xs text-muted-foreground">
-            <p>v2.0.0 • Batch Mode</p>
-            <p className="mt-1">© 2024 Voice Journal</p>
+            <p>Groq + local Whisper</p>
+            <p className="mt-1">Your words, preserved.</p>
           </div>
         ) : (
           <div className="text-center text-[10px] text-muted-foreground">v2</div>

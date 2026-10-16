@@ -1,3 +1,5 @@
+import { useQuery } from '@tanstack/react-query'
+import { fetchStorageStatus } from '@/lib/api'
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -14,6 +16,7 @@ interface PageLayoutProps {
 export function PageLayout({ children }: PageLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const location = useLocation()
+  const storage = useQuery({ queryKey: ['storage'], queryFn: fetchStorageStatus, refetchInterval: 10000 })
 
   return (
     <div className="min-h-screen bg-background">
@@ -29,6 +32,11 @@ export function PageLayout({ children }: PageLayoutProps) {
       >
         <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
 
+        {(storage.isError || storage.data?.available === false) && (
+          <div role="alert" className="bg-destructive p-4 font-semibold text-destructive-foreground">
+            {storage.data?.error || 'Storage status unavailable. Check the journal drive.'}
+          </div>
+        )}
         <main className="min-h-[calc(100vh-8rem)] p-4 md:p-6 lg:p-8 pb-20 md:pb-8">
           <motion.div
             key={location.pathname}
