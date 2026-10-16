@@ -27,7 +27,7 @@ export function PerfTracker() {
 }
 
 export function measureComponentRender(name: string) {
-  return function <T extends (...args: any[]) => any>(
+  return function <T extends (...args: never[]) => unknown>(
     fn: T
   ): T {
     return ((...args: Parameters<T>) => {

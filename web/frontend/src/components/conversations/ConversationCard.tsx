@@ -30,6 +30,7 @@ export function ConversationCard({ conversation, onClick }: ConversationCardProp
               <span className="text-xs">•</span>
               <span>{formatDuration(conversation.duration_seconds)}</span>
             </div>
+            {conversation.review_flags?.length ? <Badge variant="outline">Needs review</Badge> : null}
             {conversation.is_shivangi_conversation && (
               <Badge variant="shivangi" className="text-xs">♥</Badge>
             )}
@@ -37,7 +38,7 @@ export function ConversationCard({ conversation, onClick }: ConversationCardProp
 
           {/* Summary Preview */}
           <p className="mt-3 text-sm line-clamp-2">
-            {conversation.summary || 'No summary available'}
+            {conversation.raw_transcript || 'Transcript unavailable'}
           </p>
 
           {/* Footer: Participants and Languages */}
@@ -58,7 +59,7 @@ export function ConversationCard({ conversation, onClick }: ConversationCardProp
             ))}
 
             {/* Quality Badge */}
-            {conversation.quality && conversation.quality !== 'not_applicable' && (
+            {conversation.quality && !['not_applicable', 'unknown', 'ok'].includes(conversation.quality) && (
               <Badge variant={conversation.quality === 'good' ? 'quality_good' : 'quality_tense'} className="text-xs">
                 {conversation.quality}
               </Badge>

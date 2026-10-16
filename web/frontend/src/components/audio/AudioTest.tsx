@@ -82,8 +82,8 @@ export function AudioTest() {
       } else {
         alert('Recording failed: ' + (data.error || 'Unknown error'));
       }
-    } catch (err: any) {
-      alert('Recording failed: ' + err.message);
+    } catch (err: unknown) {
+      alert('Recording failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setIsRecording(false);
     }
@@ -100,8 +100,8 @@ export function AudioTest() {
       if (!data.success) {
         alert('Speaker test failed: ' + data.error);
       }
-    } catch (err: any) {
-      alert('Speaker test failed: ' + err.message);
+    } catch (err: unknown) {
+      alert('Speaker test failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
     }
   };
 
@@ -193,9 +193,9 @@ export function AudioTest() {
 
       setTalkbackActive(true);
       setTalkbackConnecting(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Talkback error:', err);
-      alert('Failed to start talkback: ' + err.message);
+      alert('Failed to start talkback: ' + (err instanceof Error ? err.message : 'Unknown error'));
       stopTalkback();
       setTalkbackConnecting(false);
     }
@@ -253,8 +253,8 @@ export function AudioTest() {
 
       mediaRecorder.start();
       setIsRecording(true);
-    } catch (err: any) {
-      alert('Failed to start recording: ' + err.message);
+    } catch (err: unknown) {
+      alert('Failed to start recording: ' + (err instanceof Error ? err.message : 'Unknown error'));
     }
   };
 
