@@ -2,11 +2,13 @@
 
 A simplified, Dockerized voice journal system that captures audio, performs VAD, stores segments on an external drive, and provides batch transcription with a web dashboard for playback and search.
 
+See [docs/AUDIT.md](docs/AUDIT.md) for the current stabilization status and verified limitations. The full router/speaker/dashboard upgrade is not complete.
+
 ## Key Features
 
 - **Audio Capture**: Continuous microphone input with Silero VAD for speech detection
 - **Day-wise Organization**: All data organized by local date (Asia/Kolkata)
-- **External Drive Storage**: Automatically detects and uses 1TB external drive for all storage
+- **External Drive Storage**: Requires the external drive mounted at `/mnt/music-drive`
 - **Batch Processing**: Efficient transcription using faster-whisper with optional speaker gender tagging
 - **Web Dashboard**: Flask-based interface for browsing, playing, and searching recordings
 - **Dockerized**: Easy deployment with docker-compose, separated daemon and web services
@@ -45,7 +47,7 @@ cd voice-journal
 ### 3. Configure Environment
 ```bash
 cp .env.example .env
-# Edit .env to set DATA_ROOT if not auto-detected, adjust resource limits, etc.
+# Set DATA_ROOT=/mnt/music-drive in .env and configure WEB_AUTH_USERNAME and WEB_AUTH_PASSWORD.
 ```
 
 ### 4. Build and Start Services
@@ -58,7 +60,7 @@ cp .env.example .env
 ### Environment Variables (.env)
 
 Key variables:
-- `DATA_ROOT`: Root directory for all data (auto-detected if empty)
+- `DATA_ROOT`: Required external disk mount (`/mnt/music-drive`); no auto-detection
 - Resource limits for each service (DAEMON_CPUS, WEB_CPUS, TRANSCRIBE_CPUS, etc.)
 - Audio processing parameters (sample rates, VAD thresholds, ASR settings)
 - Batch processing scheduler configuration
@@ -182,7 +184,7 @@ python3 migrate_data.py
 ```
 
 The script will:
-1. Auto-detect external drive for DATA_ROOT
+1. Check the explicitly configured DATA_ROOT mount
 2. Create new directory structure
 3. Migrate existing database
 4. Migrate audio files to date-based structure
@@ -252,3 +254,28 @@ The system is optimized for Hindi/English code-switching. Adjust `ASR_LANGUAGE` 
 ## License
 
 MIT License - see LICENSE file for details
+
+## Current HP release
+
+The latest deployed release uses Groq-first short-clip transcription, including on
+battery, with local Whisper fallback on AC. It includes working note playback,
+noise-reduced/original audio selection, persistent dark/light/system themes and
+validated dated CSV import/export. Clear-all requires explicit typed confirmation
+and retains the SQLite file/schema. See [deployment status](docs/DEPLOYMENT_STATUS.md)
+for the active Compose directory, verification results and limitations.
+
+
+The current release also requires voice enrollment at `/calibration`. Record
+Shreyansh and Shivangi separately for 30 seconds each on the HP microphone,
+including near/far positions, with media paused. A local speaker-embedding gate
+checks new audio before transcription and labels matched notes. No profiles means
+transcription waits. Unmute normal journaling when ready. Recognition is
+probabilistic; recorded enrolled voices and overlapping media cannot always be
+rejected by a single microphone. No real-world accuracy is claimed before testing
+your enrolled voices. See the latest deployment status for verification.
+
+Continuous conversations, pinned external microphone selection, Hindi/English
+validation and dashboard **Listen live** are documented in
+[CONTINUOUS_CAPTURE.md](docs/CONTINUOUS_CAPTURE.md). See the latest
+[HP deployment status](docs/DEPLOYMENT_STATUS.md) for the active release and
+remaining real-voice acceptance steps.
