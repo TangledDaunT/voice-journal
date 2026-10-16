@@ -4,7 +4,7 @@ Transcribes merged segments using a configurable faster-whisper model with confi
 """
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, is_dataclass, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -56,6 +56,9 @@ class TranscriptSegmentWithConfidence:
     confidence_metrics: Optional[ConfidenceMetrics] = None
     low_confidence: bool = False
     repetition_detected: bool = False
+
+    raw_payload: dict = field(default_factory=dict)
+    policy_status: Optional[str] = None
 
     # Source tracking
     merge_count: int = 1
@@ -126,7 +129,8 @@ class BatchASRProcessor:
         self.model = WhisperModel(
             self.model_size,
             device=self.device,
-            compute_type=self.compute_type
+            compute_type=self.compute_type,
+            cpu_threads=1,
         )
 
         logger.info("Model loaded successfully")
@@ -135,7 +139,8 @@ class BatchASRProcessor:
         self,
         merged_segment: MergedSegment,
         speaker: str = "unknown",
-        speaker_confidence: float = 0.0
+        speaker_confidence: float = 0.0,
+        language: Optional[str] = None
     ) -> Optional[TranscriptSegmentWithConfidence]:
         """
         Transcribe a merged segment with confidence tracking.
@@ -159,7 +164,7 @@ class BatchASRProcessor:
             # Transcribe with anti-hallucination settings
             segments_gen, info = self.model.transcribe(
                 audio,
-                language=self.asr_config.language,
+                language=language or self.asr_config.language,
                 beam_size=self.beam_size,
                 vad_filter=self.vad_filter,
                 condition_on_previous_text=self.condition_on_previous_text,
@@ -167,7 +172,8 @@ class BatchASRProcessor:
                 no_repeat_ngram_size=self.no_repeat_ngram_size,
                 repetition_penalty=self.repetition_penalty,
                 temperature=0.0,  # Deterministic
-                initial_prompt=self.initial_prompt
+                word_timestamps=True,
+                initial_prompt=__import__("asr.language_policy", fromlist=["PROMPT"]).PROMPT
             )
 
             # Collect segments
@@ -220,8 +226,7 @@ class BatchASRProcessor:
                 logger.warning(
                     "Repetition loop detected in ASR output: "
                     f"start={merged_segment.start_time.isoformat()}, "
-                    f"end={merged_segment.end_time.isoformat()}, "
-                    f"text={text[:120]!r}"
+                    f"end={merged_segment.end_time.isoformat()}"
                 )
 
             # Calculate average confidence
@@ -245,7 +250,12 @@ class BatchASRProcessor:
             lang_prob = info.language_probability
 
             # Language correction (Hindi/English code-switching)
-            detected_lang = self._correct_language(text, detected_lang)
+            # Preserve the provider language; validation must not relabel bad output.
+            self.last_raw_payload = {
+                "text": text, "language": detected_lang, "words": word_list,
+                "segments": [asdict(seg) if is_dataclass(seg) else vars(seg) for seg in segments_list],
+                "info": asdict(info) if is_dataclass(info) else vars(info),
+            }
 
             # Create transcript segment
             result = TranscriptSegmentWithConfidence(
@@ -264,6 +274,25 @@ class BatchASRProcessor:
                 merge_count=merged_segment.merge_count,
                 source_segments=len(merged_segment.source_segments)
             )
+
+            from asr.language_policy import violation
+            result.raw_payload = dict(self.last_raw_payload)
+            reason = violation(result.raw_payload)
+            if reason and language != "hi":
+                first = result.raw_payload
+                retry = self.transcribe_merged_segment(merged_segment, speaker, speaker_confidence, language="hi")
+                if retry:
+                    retry.raw_payload.update(policy_first_response=first, policy_retry_language="hi")
+                    self.last_raw_payload = retry.raw_payload
+                    return retry
+            if reason:
+                result.policy_status = reason
+                result.text = "[Transcript needs language review]"
+                result.low_confidence = True
+                from utils.data_lock import write_json
+                import hashlib
+                key = hashlib.sha256(merged_segment.start_time.isoformat().encode()).hexdigest()[:24]
+                write_json(Path(self.config.audio.audio_storage_path).parent / "asr_review" / f"{key}.json", result.raw_payload)
 
             # Update stats
             self.stats["segments_transcribed"] += 1
@@ -284,7 +313,7 @@ class BatchASRProcessor:
             log_metric("ASR", "avg_logprob", avg_logprob)
 
             marker = " ⚠️ repetition-detected" if repetition_detected else (" ⚠️" if is_low_confidence else "")
-            log_stage("ASR", f"[{result.word_count}w]{marker} {text[:60]}...")
+            log_stage("ASR", f"[{result.word_count}w]{marker}")
 
             return result
 

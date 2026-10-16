@@ -4,11 +4,14 @@
 # Audio Capture (Stage 1) - Still runs near-real-time
 audio:
   sample_rate: 16000
+  input_device: null  # Deployment pins the actual external input; no default fallback when set
+  input_card: null
+  input_jack_control: null
   channels: 1
   block_size: 4096
   ring_buffer_seconds: 30
   keep_audio: false
-  audio_storage_path: "${DATA_ROOT:-/home/shreyansh/NAS}/voice-journal/audio"
+  audio_storage_path: "${DATA_ROOT:-/mnt/music-drive}/voice-journal/audio"
   # Phase 2: Capture settings
   capture_sample_rate: 16000  # CAPTURE_SAMPLE_RATE
   capture_bit_depth: 16       # 16-bit
@@ -31,6 +34,10 @@ vad:
 
 # Speaker Calibration (Updated for embeddings)
 speaker:
+  enrolled_only: true
+  similarity_threshold: 0.80
+  similarity_margin: 0.08
+  min_matched_seconds: 1.6
   calibration_file: "./config/voice_profiles.json"
   embedding_similarity_threshold: 0.75  # Cosine similarity threshold for speaker match
 
@@ -49,7 +56,7 @@ asr:
 
   # Vocabulary biasing - only proper nouns that Whisper might mistranscribe
   # Add project names, recurring proper nouns, etc.
-  initial_prompt: "Shreyansh, Shivangi. Use only Hindi and English; do not output any other language."
+  initial_prompt: "Shreyansh, Shivangi."
 
   # Confidence thresholds for flagging uncertain segments
   no_speech_prob_threshold: 0.5
@@ -72,24 +79,24 @@ conversation:
   rapid_alternation_threshold: 3.0
 cleanup:
 database:
-  path: "${DATA_ROOT:-/home/shreyansh/NAS}/voice-journal/db/voice_journal.db"
+  path: "${DATA_ROOT:-/mnt/music-drive}/voice-journal/db/voice_journal.db"
   enable_fts: true
 
 # Dashboard audio playback (separate from raw staging retention)
 dashboard:
-  audio_cache_path: "${DATA_ROOT:-/home/shreyansh/NAS}/voice-journal/audio_cache"
-  audio_retention_days: 30
+  audio_cache_path: "${DATA_ROOT:-/mnt/music-drive}/voice-journal/audio_cache"
+  audio_retention_days: 0
   audio_bitrate_kbps: 32
 
 journal:
   timezone: "Asia/Kolkata"
-  storage_path: "${DATA_ROOT:-/home/shreyansh/NAS}/voice-journal/daily_journal"
+  storage_path: "${DATA_ROOT:-/mnt/music-drive}/voice-journal/daily_journal"
 
 # Daemon settings
 daemon:
   log_level: "INFO"
   log_file: "./logs/voice_journal.log"
-  mute_file: "/data/voice-journal/mute_flag"
+  mute_file: "${DATA_ROOT:-/mnt/music-drive}/voice-journal/mute_flag"
   health_check_interval: 60
   # Phase 2: Disk guard
   disk_min_free_gb: 20

@@ -20,6 +20,9 @@ class AudioConfig(BaseModel):
     channels: int = 1
     block_size: int = 1024
     ring_buffer_seconds: int = 30
+    input_card: Optional[str] = None
+    input_jack_control: Optional[str] = None
+    input_device: Optional[str] = None  # Exact PortAudio name; never fall back when configured
     keep_audio: bool = False
     audio_storage_path: str = "./audio_clips"
     # Phase 2: Capture settings
@@ -52,6 +55,10 @@ class SpeakerProfile(BaseModel):
 
 
 class SpeakerConfig(BaseModel):
+    enrolled_only: bool = True
+    similarity_threshold: float = Field(default=0.80, ge=0.65, le=0.99)
+    similarity_margin: float = Field(default=0.08, ge=0.01, le=0.3)
+    min_matched_seconds: float = Field(default=1.6, ge=1, le=4)
     profiles: Dict[str, SpeakerProfile] = Field(default_factory=dict)
     calibration_file: str = "./config/voice_profiles.json"
 
@@ -67,7 +74,7 @@ class ASRConfig(BaseModel):
     repetition_penalty: float = Field(default=1.3, ge=0.0)
     vad_filter: bool = True
     condition_on_previous_text: bool = False
-    initial_prompt: Optional[str] = "Shreyansh, Shivangi. Use only Hindi and English."
+    initial_prompt: Optional[str] = "Shreyansh, Shivangi."
 
     # Confidence thresholds for gating
     no_speech_prob_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
@@ -191,7 +198,7 @@ class DatabaseConfig(BaseModel):
 class DashboardConfig(BaseModel):
     """Retention policy for conversation audio playable from the dashboard."""
     audio_cache_path: str = "./audio_cache"
-    audio_retention_days: int = Field(default=30, ge=0)
+    audio_retention_days: int = Field(default=0, ge=0)
     audio_bitrate_kbps: int = Field(default=32, ge=16)
 
 
@@ -215,8 +222,20 @@ class SystemConfig(BaseModel):
     hotkey_mute: str = "ctrl+shift+m"
 
 
+class TranscriptionConfig(BaseModel):
+    mode: str = 'groq_first'
+    groq_model: str = 'whisper-large-v3'
+    capture_chunk_seconds: float = Field(default=6.0, ge=3, le=20)
+    daily_requests: int = Field(default=2000, ge=1)
+    daily_seconds: int = Field(default=28800, ge=10)
+    hourly_seconds: int = Field(default=7200, ge=10)
+    requests_per_minute: int = Field(default=20, ge=1)
+    budget_fraction: float = Field(default=0.9, gt=0, le=1)
+
+
 class Config(BaseSettings):
     """Main configuration class."""
+    transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
     vad: VADConfig = Field(default_factory=VADConfig)
     speaker: SpeakerConfig = Field(default_factory=SpeakerConfig)
@@ -236,7 +255,7 @@ class Config(BaseSettings):
     backlog: BacklogConfig = Field(default_factory=BacklogConfig)
     system: SystemConfig = Field(default_factory=SystemConfig)
 
-    model_config = {"env_prefix": "VJ_"}
+    model_config = {"env_prefix": "VJ_", "env_nested_delimiter": "__"}
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
