@@ -5,6 +5,7 @@ Runs as a scheduled batch job, not in real-time.
 """
 
 import os
+import hashlib
 import json
 import time
 import shutil
@@ -19,6 +20,7 @@ import psutil
 import numpy as np
 
 from config.settings import Config
+from utils.storage_guard import require_external_storage
 from vad.silero_vad import SpeechSegment
 from vad.segment_merger import SegmentMerger, MergedSegment
 from audio_capture.preprocess import AudioPreprocessor
@@ -27,6 +29,15 @@ from speaker_id.identification import SpeakerIdentifier
 from conversation.grouping import ConversationGrouper, ConversationUnit
 from storage.database import SQLiteStore, BacklogTracker
 from utils.logger import logger, log_stage, log_metric
+
+
+def processing_on_ac() -> bool:
+    """Never start expensive work while a battery-equipped host is unplugged."""
+    try:
+        battery = psutil.sensors_battery()
+        return battery is None or bool(battery.power_plugged)
+    except (OSError, RuntimeError):
+        return False
 
 
 @dataclass
@@ -41,6 +52,8 @@ class StagedSegment:
     captured_at: datetime
     processing_attempts: int = 0
     last_error: Optional[str] = None
+    core_start_samples: int = 0
+    core_end_samples: Optional[int] = None
 
 
 @dataclass
@@ -58,11 +71,14 @@ class StagingQueue:
     Stores raw audio + metadata on disk, tracks backlog in SQLite.
     """
 
-    def __init__(self, config: Config, disable_denoising: bool = False):
+    def __init__(self, config: Config, disable_denoising: bool = False, storage_guard=None):
         if disable_denoising:
             config = config.model_copy(deep=True)
             config.preprocessing.enable_denoising = False
         self.config = config
+        self.storage_guard = storage_guard
+        if self.storage_guard:
+            self.storage_guard(self.config)
         self.staging_dir = Path(config.audio.audio_storage_path) / "staging"
         self.staging_dir.mkdir(parents=True, exist_ok=True)
 
@@ -78,6 +94,8 @@ class StagingQueue:
         Returns:
             segment_id for tracking
         """
+        if self.storage_guard:
+            self.storage_guard(self.config)
         # Generate unique ID based on start time
         
         # Determine date directory (Asia/Kolkata timezone)
@@ -99,11 +117,12 @@ class StagingQueue:
         self.staging_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate unique filename
-        segment_id = f"{date_str}_{time_str}_{id(segment)}"
+        from uuid import uuid4
+        segment_id = f"{date_str}_{time_str}_{uuid4().hex}"
         segment_id = segment_id.replace(" ", "_").replace(":", "-")
         
         # Save audio as Opus file
-        audio_filename = f"{segment_id}.opus"
+        audio_filename = f"{segment_id}.flac"
         audio_path = os.path.join(self.staging_dir, audio_filename)
         
         # Convert and save as Opus using ffmpeg
@@ -112,7 +131,7 @@ class StagingQueue:
         import json
         
         # Save temporary wav file first
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+        with tempfile.NamedTemporaryFile(suffix=".wav", dir=self.staging_dir, delete=False) as tmp_wav:
             # Convert audio to proper format for wav
             from scipy.io.wavfile import write
             import numpy as np
@@ -134,39 +153,37 @@ class StagingQueue:
             
             write(tmp_wav.name, segment.sample_rate, audio_int16)
             
-            # Convert to opus
+            # Encode lossless PCM as FLAC
             cmd = [
                 "ffmpeg",
                 "-y",  # overwrite output
                 "-i", tmp_wav.name,
-                "-c:a", "libopus",
-                "-b:a", "12k",  # good speech bitrate
-                "-vbr", "on",
-                "-frame_duration", "20",
-                "-application", "audio",
+                "-c:a", "flac",
+                "-compression_level", "0",
+                "-threads", "1",
                 audio_path
             ]
             
             try:
                 result = subprocess.run(cmd, check=True, capture_output=True, timeout=30)
             except subprocess.CalledProcessError as e:
-                logger.error(f"Failed to convert audio to Opus: {e}")
-                # Fallback: save as wav if opus fails
-                audio_path = audio_path.replace(".opus", ".wav")
+                logger.error(f"Failed to convert audio to FLAC: {e}")
+                # Fallback: save as wav if FLAC encoding fails
+                audio_path = str(Path(audio_path).with_suffix(".wav"))
                 os.rename(tmp_wav.name, audio_path)
                 audio_format = "wav"
             except subprocess.TimeoutExpired:
-                logger.error(f"FFmpeg timeout converting audio to Opus")
-                audio_path = audio_path.replace(".opus", ".wav")
+                logger.error(f"FFmpeg timeout converting audio to FLAC")
+                audio_path = str(Path(audio_path).with_suffix(".wav"))
                 os.rename(tmp_wav.name, audio_path)
                 audio_format = "wav"
             else:
                 # Clean up temp file
                 os.unlink(tmp_wav.name)
-                audio_format = "opus"
+                audio_format = "flac"
         
         # Save metadata as JSON
-        metadata_path = audio_path.replace(".opus", ".json").replace(".wav", ".json")
+        metadata_path = str(Path(audio_path).with_suffix(".json"))
         metadata = {
             "segment_id": segment_id,
             "start_time": segment.start_time.isoformat(),
@@ -175,12 +192,14 @@ class StagingQueue:
             "sample_rate": segment.sample_rate,
             "duration_seconds": segment.duration_seconds,
             "captured_at": datetime.now().isoformat(),
+            "core_start_samples": segment.core_start_samples,
+            "core_end_samples": segment.core_end_samples,
             "format": audio_format
         }
         
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f, indent=2)
-        
+        from utils.data_lock import write_json
+        write_json(metadata_path, metadata)
+
         # Track in backlog
         self.backlog_tracker.add_segment(
             segment_id=segment_id,
@@ -206,6 +225,8 @@ class StagingQueue:
                     audio_path=metadata["audio_path"],
                     sample_rate=metadata["sample_rate"],
                     duration_seconds=metadata["duration_seconds"],
+                    core_start_samples=metadata.get("core_start_samples", 0),
+                    core_end_samples=metadata.get("core_end_samples"),
                     captured_at=datetime.fromisoformat(metadata["captured_at"])
                 )
                 segments.append(segment)
@@ -229,7 +250,7 @@ class StagingQueue:
         import numpy as np
         
         # Decode Opus to temporary WAV file
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+        with tempfile.NamedTemporaryFile(suffix=".wav", dir=self.staging_dir, delete=False) as tmp_wav:
             tmp_wav_path = tmp_wav.name
         
         try:
@@ -251,13 +272,15 @@ class StagingQueue:
             start_time=segment.start_time,
             end_time=segment.end_time,
             audio=audio,
-            sample_rate=segment.sample_rate
+            sample_rate=segment.sample_rate,
+            core_start_samples=segment.core_start_samples,
+            core_end_samples=segment.core_end_samples,
         )
 
     def mark_processed(self, segment_id: str):
         """Mark a segment as processed (delete staged files)."""
         # Delete audio and metadata files (opus/json, not npy/json)
-        for ext in [".opus", ".wav", ".json"]:
+        for ext in [".opus", ".flac", ".wav", ".json"]:
             audio_path = self.staging_dir / f"{segment_id}{ext}"
             if audio_path.exists():
                 audio_path.unlink()
@@ -278,14 +301,17 @@ class BatchProcessor:
     Runs the full pipeline (merge → preprocess → ASR → speaker ID → grouping → LLM → output).
     """
 
-    def __init__(self, config: Config, disable_denoising: bool = False):
+    def __init__(self, config: Config, disable_denoising: bool = False, storage_guard=None):
         self.config = config
+        self.storage_guard = storage_guard
+        if self.storage_guard:
+            self.storage_guard(self.config)
         if disable_denoising:
             self.config = config.model_copy(deep=True)
             self.config.preprocessing.enable_denoising = False
 
         # Components
-        self.staging_queue = StagingQueue(self.config)
+        self.staging_queue = StagingQueue(self.config, storage_guard=self.storage_guard)
         self.segment_merger = SegmentMerger(self.config)
         self.preprocessor = AudioPreprocessor(self.config)
 
@@ -307,7 +333,7 @@ class BatchProcessor:
             # Use fallback model for overflow
             if self._fallback_asr is None:
                 logger.info("Loading fallback ASR model...")
-                fallback_config = self.config.model_copy()
+                fallback_config = self.config.model_copy(deep=True)
                 fallback_config.asr.model_size = self.config.scheduler.fallback_model
                 fallback_config.asr.compute_type = self.config.scheduler.fallback_compute_type
                 self._fallback_asr = BatchASRProcessor(fallback_config)
@@ -344,6 +370,19 @@ class BatchProcessor:
         Returns:
             Job statistics
         """
+        if self.storage_guard:
+            self.storage_guard(self.config)
+        if self.config.speaker.enrolled_only:
+            from processing.live_pipeline import LiveProcessor
+            from utils.data_lock import data_lock
+            processor = LiveProcessor(self.config, self.staging_queue)
+            for staged in self.staging_queue.get_pending_segments(limit=max_segments):
+                with data_lock(self.config):
+                    processor.process(staged)
+            return {"segments_remaining": len(self.staging_queue.get_pending_segments()), "enrolled_only": True}
+        if not processing_on_ac():
+            return {"segments_processed": 0, "conversations_created": 0,
+                    "errors": 0, "paused_reason": "on_battery"}
         job_start = datetime.now()
         job_id = job_start.strftime("%Y%m%d_%H%M%S")
 
@@ -404,14 +443,15 @@ class BatchProcessor:
         log_stage("Batch", f"Transcribing {len(merged_units)} units...")
         transcript_segments = []
         audio_by_transcript_id = {}
+        sources_by_transcript_id = {}
 
         for i, unit in enumerate(merged_units, 1):
+            if not processing_on_ac():
+                log_stage("Batch", "Battery power: remaining units stay staged")
+                break
             try:
                 original_rms_db = original_rms_by_unit[i - 1]
                 if original_rms_db < self.config.preprocessing.min_rms_db_for_asr:
-                    for source_seg in unit.source_segments:
-                        if hasattr(source_seg, 'segment_id'):
-                            self.staging_queue.mark_processed(source_seg.segment_id)
                     log_stage(
                         "ASR",
                         f"Skipped low-energy unit {i}: "
@@ -424,10 +464,9 @@ class BatchProcessor:
                 result = asr.transcribe_merged_segment(unit)
 
                 if result:
-                    # Map back to source segment IDs
-                    for source_seg in unit.source_segments:
-                        if hasattr(source_seg, 'segment_id'):
-                            self.staging_queue.mark_processed(source_seg.segment_id)
+                    sources_by_transcript_id[id(result)] = [
+                        seg.segment_id for seg in unit.source_segments if hasattr(seg, 'segment_id')
+                    ]
 
                     transcript_segments.append(result)
                     audio_by_transcript_id[id(result)] = (unit.audio.copy(), unit.sample_rate)
@@ -441,13 +480,11 @@ class BatchProcessor:
         log_stage("Batch", "Grouping conversations...")
         conversations = self._conversation_grouper.group_segments(transcript_segments)
 
-        # Only force-close trailing conversation if backlog is drained (genuine silence gap)
-        backlog_status = self.staging_queue.get_backlog_status()
-        if backlog_status.get("total_hours", 0.0) == 0.0:
-            # No more staged audio waiting -- genuine gap, safe to close out the trailing conversation
-            trailing = self._conversation_grouper.flush()
-            if trailing:
-                conversations.append(trailing)
+        # Persist trailing text in this batch; never acknowledge an in-memory result.
+        # Conversations can split at a batch boundary until durable grouping is added.
+        trailing = self._conversation_grouper.flush()
+        if trailing:
+            conversations.append(trailing)
 
         # Process each conversation (LLM + output)
         conversations_created = 0
@@ -468,6 +505,14 @@ class BatchProcessor:
                     "summary": ""
                 })()
 
+                source_ids = sorted(
+                    source_id
+                    for segment in conversation.transcript_segments
+                    for source_id in sources_by_transcript_id[id(segment)]
+                )
+                # Deterministic IDs make a retry of the same source group idempotent.
+                digest = hashlib.sha256("\n".join(source_ids).encode()).digest()
+                conversation.conversation_id = int.from_bytes(digest[:6], "big")
                 self._cache_conversation_audio(conversation, audio_by_transcript_id)
                 note_path = None
 
@@ -480,6 +525,8 @@ class BatchProcessor:
                     cleaned_transcript=cleaned_transcript
                 )
 
+                for source_id in source_ids:
+                    self.staging_queue.mark_processed(source_id)
                 conversations_created += 1
                 log_stage("Batch", f"Conversation {conversation.conversation_id}: processed")
 
@@ -507,10 +554,11 @@ class BatchProcessor:
 
     def _cache_conversation_audio(self, conversation, audio_by_transcript_id):
         """Cache the preprocessed audio represented by a conversation as Opus."""
+        if self.storage_guard:
+            self.storage_guard(self.config)
         ffmpeg = shutil.which("ffmpeg")
         if not ffmpeg:
-            logger.warning("Audio cache skipped: ffmpeg is not installed")
-            return
+            raise RuntimeError("Cannot commit a playable transcript: ffmpeg is not installed")
 
         audio_parts = [
             audio_by_transcript_id[id(segment)][0]
@@ -518,7 +566,7 @@ class BatchProcessor:
             if id(segment) in audio_by_transcript_id
         ]
         if not audio_parts:
-            return
+            raise RuntimeError("Cannot commit a transcript without source audio")
 
         sample_rate = audio_by_transcript_id[id(conversation.transcript_segments[0])][1]
         date_dir = Path(self.config.dashboard.audio_cache_path) / conversation.start_time.strftime("%Y-%m-%d")
@@ -533,8 +581,10 @@ class BatchProcessor:
             )
             log_stage("AudioCache", f"Cached conversation audio: {output_path}")
         except (OSError, subprocess.CalledProcessError) as exc:
-            logger.warning(f"Audio cache failed for conversation {conversation.conversation_id}: {exc}")
+            raise RuntimeError("Conversation audio cache failed; staged audio retained") from exc
 
+        if self.config.dashboard.audio_retention_days == 0:
+            return
         cutoff = time.time() - self.config.dashboard.audio_retention_days * 86400
         for cached_file in Path(self.config.dashboard.audio_cache_path).rglob("*.ogg"):
             if cached_file.stat().st_mtime < cutoff:
@@ -602,7 +652,10 @@ class BatchScheduler:
             logger.debug("Batch already in progress, skipping scheduler check")
             return
 
-        now = datetime.now()
+        if not processing_on_ac():
+            return
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
         current_hour = now.hour
 
         # Check if in guaranteed processing window
@@ -736,7 +789,21 @@ def run_batch_job(
     else:
         config = Config()
 
-    processor = BatchProcessor(config, disable_denoising=disable_denoising)
+    require_external_storage(config)
+    if config.speaker.enrolled_only:
+        from processing.live_pipeline import LiveProcessor
+        from utils.data_lock import data_lock
+        queue = StagingQueue(config, storage_guard=require_external_storage)
+        processor = LiveProcessor(config, queue)
+        pending = queue.get_pending_segments()
+        for staged in pending:
+            with data_lock(config):
+                processor.process(staged)
+        return {"segments_remaining": len(queue.get_pending_segments()), "enrolled_only": True}
+
+    processor = BatchProcessor(
+        config, disable_denoising=disable_denoising, storage_guard=require_external_storage
+    )
     stats = processor.run_batch(use_fallback=use_fallback)
 
     print("\nBatch job complete:")
