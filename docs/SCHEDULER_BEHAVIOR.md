@@ -129,3 +129,40 @@ The scheduler does NOT self-interrupt. Once a batch chunk starts:
 - Idle is only checked BETWEEN chunks, not during
 
 This prevents constant start/stop from its own CPU usage.
+
+## Stabilization note (2026-10-15)
+
+The CPU/Groq router and battery guard requested in the upgrade are not implemented
+in this pass. The current YAML has `process_all_day: true`, so the original idle
+flow above does not describe the deployed default accurately. No realtime factor
+in the illustrative examples above was measured by this audit.
+
+The batch path now retains staged source files until a conversation commit succeeds,
+including on low-energy or empty ASR results. Such units remain queued for now;
+a durable rejected-silence status is still needed. Trailing conversations flush at
+each batch boundary so acknowledgement does not depend on in-memory grouping.
+This can split a conversation between batches. A SHA-256-derived 48-bit identifier
+makes retries of the same source group stable; replay with changed grouping can
+still create duplicate text. Durable per-segment idempotency remains outstanding.
+
+## Later Groq-first deployment (2026-10-15)
+
+The active daemon now uses `processing.live_pipeline.LiveProcessor`, which checks
+the durable staging queue every second. Speech is detected from roughly six-second
+capture buffers. Cloud units do not wait for the legacy overnight/idle scheduler.
+Groq is primary on AC and battery; local fallback runs only on AC. The legacy
+BatchScheduler remains for manual/legacy use, and its earlier descriptions above
+must not be interpreted as the current daemon's routing behavior. A queue count
+of zero is normal after completed clips have been saved or while no speech is
+being detected. Capture signal and last successful save are separate live metrics.
+
+
+## Enrolled-voice gate (2026-10-15)
+
+The live worker and manual batch entry points verify enabled speaker profiles
+before either ASR engine. No profiles leaves staging pending with
+`enrollment_required`; explicit calibration takes priority. Unknown source audio
+is retained locally with a decision ledger and never sent to ASR. Accepted ranges
+keep original time offsets; a partial failure keeps the parent queued and child
+IDs make retries idempotent. Groq-first/battery and local-fallback rules above
+still apply after verification. See DEPLOYMENT_STATUS.md for exact thresholds.

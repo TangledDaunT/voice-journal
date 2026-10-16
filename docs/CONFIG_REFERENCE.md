@@ -181,3 +181,56 @@ Checks:
 - Values in valid ranges
 - Paths accessible
 - Dependencies installed
+
+## Storage and authentication stabilization (2026-10-15)
+
+Set `DATA_ROOT=/mnt/music-drive` in `.env` on the HP. Docker maps that mount to
+`/data`; do not add `voice-journal` to DATA_ROOT. Do not change the live value
+until the existing nested files have been backed up and a migration is planned.
+Daemon and manual batch entry points validate the mount and destination paths;
+the web API returns 503 while the drive is unavailable. `/api/storage` provides
+the dashboard banner state. Database reads use SQLite `mode=ro`, without schema
+creation. `/health` and `/api/health` remain unauthenticated; other routes require
+HTTP Basic Auth. Set `WEB_AUTH_USERNAME` and `WEB_AUTH_PASSWORD`; no default
+password is supplied. Recreate containers after changing these variables.
+
+`dashboard.audio_retention_days: 0` now means never automatically delete cached
+audio, and is the default. Positive values explicitly enable age-based deletion.
+ASR initial prompts should contain vocabulary only, not decoding instructions.
+These settings are loaded at startup; runtime settings management is unfinished.
+The storage removal tests are simulations, not evidence of physical hot-unplug
+safety; see AUDIT.md for the remaining limitations.
+
+## Groq-first live clips (2026-10-15)
+
+The later Groq-first release supersedes the CPU-routing request: `GROQ_API_KEY`
+comes only from the protected server environment. `transcription` configuration
+controls `groq_model` (whisper-large-v3), `capture_chunk_seconds` (6),
+`daily_requests` (2000), `daily_seconds` (28800), `hourly_seconds` (7200),
+`requests_per_minute` (20), and `budget_fraction` (0.9). YAML changes require a
+container rebuild/recreation in the current immutable-image deployment. Theme
+preferences apply immediately in the browser. Groq runs on battery; local fallback
+waits for AC. See DEPLOYMENT_STATUS.md for rate accounting, data control endpoints,
+and exact limitations. No API route returns the key.
+
+
+## Enrolled speakers (2026-10-15)
+
+`speaker.enrolled_only` defaults to true. `similarity_threshold` defaults to 0.80,
+`similarity_margin` to 0.08 and `min_matched_seconds` to 1.6. Unknown/ambiguous
+speech is excluded before both ASR paths; absent/unavailable enrollment blocks
+transcription. These YAML settings require restart/recreation. Profile enrollment,
+recalibration and enable/disable apply immediately through `/calibration`.
+No extra environment variables or cloud provider keys are needed. Embeddings
+stay in the project SQLite database. Raw calibration audio is deleted after
+analysis. See DEPLOYMENT_STATUS.md for retention, exports and limitations.
+
+### Pinned input and conversation capture
+
+`audio.input_device` is an exact PortAudio device name, resolved again on stream
+start; absent or ambiguous configured names fail closed. Optional
+`audio.input_card` and `audio.input_jack_control` identify an ALSA CARD jack
+control, checked outside the callback. The HP deployment pins `vj_external`,
+`PCH`, `Mic Jack` in its release YAML and mounts its named plug PCM configuration.
+See `docs/CONTINUOUS_CAPTURE.md` for the 12 s target, 24 s maximum, verified
+500 ms boundary context, 12 s conversation gap and 30 minute conversation cap.
