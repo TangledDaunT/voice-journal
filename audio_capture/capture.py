@@ -4,9 +4,10 @@ Captures microphone input into a ring buffer, resilient to disconnects.
 """
 
 import queue
+import time
 import threading
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Callable
 from pathlib import Path
 import numpy as np
@@ -142,6 +143,12 @@ class AudioCapture:
 
         self.is_running = False
         self.is_muted = False
+        self.input_overflows = 0
+        self.hardware_callbacks = 0
+        self.calibration_active = False
+        self.monitor_active = False
+        self.selected_device = None
+        self.device_error = None
         self.stream: Optional[sd.InputStream] = None
         self.mute_file = Path(config.daemon.mute_file)
 
@@ -156,12 +163,25 @@ class AudioCapture:
     def _audio_callback(self, indata: np.ndarray, frames: int,
                         time_info: dict, status: sd.CallbackFlags):
         """Callback for sounddevice stream."""
+        self.hardware_callbacks = getattr(self, 'hardware_callbacks', 0) + 1
         if status:
-            logger.warning(f"Audio callback status: {status}")
+            self.input_overflows = getattr(self, 'input_overflows', 0) + 1
 
         # Check mute flag
-        if self.is_muted or self.mute_file.exists():
-            return  # Skip recording
+        if self.is_muted and not (self.calibration_active or getattr(self, "monitor_active", False)):
+            return  # A requested enrollment temporarily receives audio without changing normal mute state
+
+        # Map PortAudio's ADC clock once; callback scheduling delays must not
+        # become artificial silence in the journal timeline.
+        duration = frames / self.sample_rate
+        adc = getattr(time_info, 'inputBufferAdcTime', None)
+        current = getattr(time_info, 'currentTime', None)
+        if adc is not None and current is not None and adc > 0:
+            if getattr(self, '_adc_wall_offset', None) is None:
+                self._adc_wall_offset = time.time() - current
+            timestamp = datetime.fromtimestamp(adc + self._adc_wall_offset).astimezone()
+        else:
+            timestamp = datetime.now().astimezone() - timedelta(seconds=duration)
 
         # Write to ring buffer
         self.ring_buffer.write(indata.copy())
@@ -170,7 +190,7 @@ class AudioCapture:
         chunk = AudioChunk(
             audio=indata.copy(),
             sample_rate=self.sample_rate,
-            timestamp=datetime.now(),
+            timestamp=timestamp,
             duration=frames / self.sample_rate
         )
         self.chunk_queue.put(chunk)
@@ -182,12 +202,24 @@ class AudioCapture:
                 chunk = self.chunk_queue.get(timeout=0.1)
                 if chunk is None:
                     break
+                if not self.check_input():
+                    continue
                 if self.on_chunk:
                     self.on_chunk(chunk)
             except queue.Empty:
                 continue
             except Exception as e:
                 logger.error(f"Error processing audio chunk: {e}")
+
+    def check_input(self):
+        if self.config.audio.input_jack_control:
+            from audio_capture.alsa_guard import jack_connected
+            if not jack_connected(self.config.audio.input_card, self.config.audio.input_jack_control):
+                self.device_error = "External microphone disconnected; capture blocked"
+                self.ring_buffer.clear()
+                return False
+            self.device_error = None
+        return True
 
     def start(self):
         """Start capturing audio continuously."""
@@ -209,17 +241,33 @@ class AudioCapture:
     def _start_stream(self):
         """Start the audio stream with error handling."""
         try:
+            identity = self.config.audio.input_device
+            device = None
+            if identity:
+                matches = [(i, d) for i, d in enumerate(sd.query_devices())
+                           if d['max_input_channels'] > 0 and d['name'] == identity]
+                if len(matches) != 1:
+                    raise sd.PortAudioError("Configured microphone missing or ambiguous; capture stopped")
+                device, info = matches[0]
+            else:
+                info = sd.query_devices(kind='input')
+            self.selected_device = info['name']
+            self.device_error = None
             self.stream = sd.InputStream(
+                device=device,
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 blocksize=self.block_size,
                 callback=self._audio_callback,
                 dtype=np.float32,
-                latency='high'  # Use larger buffer to prevent input overflow
+                latency=0.5  # Use larger buffer to prevent input overflow
             )
+            self._adc_wall_offset = None
             self.stream.start()
             log_stage("AudioCapture", f"Stream started: {self.sample_rate}Hz")
         except sd.PortAudioError as e:
+            self.device_error = str(e)
+            self.selected_device = None
             logger.error(f"Failed to start audio stream: {e}")
             logger.info("Attempting to reconnect in 5 seconds...")
             if self.is_running:
@@ -265,7 +313,8 @@ class AudioCapture:
 
     def get_mute_status(self) -> bool:
         """Check if currently muted."""
-        return self.is_muted or self.mute_file.exists()
+        self.is_muted = self.mute_file.exists()
+        return self.is_muted
 
     def get_recent_audio(self, seconds: float) -> AudioChunk:
         """Get the last N seconds of audio from the buffer."""
@@ -273,7 +322,7 @@ class AudioCapture:
         return AudioChunk(
             audio=audio,
             sample_rate=self.sample_rate,
-            timestamp=datetime.now(),
+            timestamp=datetime.now().astimezone(),
             duration=seconds
         )
 
