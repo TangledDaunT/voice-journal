@@ -19,9 +19,9 @@ from typing import Optional
 import queue
 import os
 import numpy as np
-import numpy as np
 
 from config.settings import Config
+from utils.storage_guard import require_external_storage
 from audio_capture.capture import AudioCapture
 from vad.silero_vad import VADProcessor, SpeechSegment
 from processing.batch_processor import StagingQueue, BatchProcessor, BatchScheduler
@@ -43,6 +43,8 @@ class VoiceJournalDaemon:
         else:
             self.config = Config()
 
+        require_external_storage(self.config)
+
         # Setup logging
         setup_logging(
             log_level=self.config.daemon.log_level,
@@ -61,6 +63,7 @@ class VoiceJournalDaemon:
         self._shutdown_requested = False
 
         # Statistics
+        self._reset_epoch = 0.0
         self.stats = {
             'vad_segments_detected': 0,
             'segments_staged': 0,
@@ -76,15 +79,24 @@ class VoiceJournalDaemon:
         logger.info("Initializing real-time components...")
 
         # Stage 1: Audio Capture
-        self.staging_queue = StagingQueue(self.config)
+        self.staging_queue = StagingQueue(self.config, storage_guard=require_external_storage)
 
         self.audio_capture = AudioCapture(
             self.config,
             on_chunk=self._handle_audio_chunk
         )
 
+        from audio_capture.monitor import MicrophoneMonitor
+        self.monitor = MicrophoneMonitor(self.config)
+
+        from speaker_id.enrollment import EnrollmentRecorder
+        self.enrollment = EnrollmentRecorder(self.config, storage_guard=require_external_storage)
+
         # Stage 2: VAD (lightweight)
         self.vad_processor = VADProcessor(self.config)
+
+        from vad.continuous import ContinuousSpeech
+        self.continuous = ContinuousSpeech(self.vad_processor.vad.detect_speech, self.config.audio.sample_rate)
 
         # Audio buffer for VAD
         self.audio_buffer: queue.Queue = queue.Queue(maxsize=100)
@@ -95,17 +107,23 @@ class VoiceJournalDaemon:
         """Initialize batch processing components."""
         logger.info("Initializing batch components...")
 
-        # Batch processor
-        self.batch_processor = BatchProcessor(self.config)
-
-        # Scheduler
-        self.batch_scheduler = BatchScheduler(self.config, self.batch_processor)
+        from processing.live_pipeline import LiveProcessor
+        self.batch_scheduler = LiveProcessor(self.config, self.staging_queue)
+        self.batch_scheduler.voice_gate.enrollment_detector = self.vad_processor.vad.detect_speech
+        self.batch_processor = self.batch_scheduler
 
         logger.info("Batch components initialized")
 
     def _handle_audio_chunk(self, chunk):
-        """Handle incoming audio chunk from capture."""
-        if not self.is_paused:
+        """Telemetry/enrollment on the queue thread, never in the hardware callback."""
+        self.monitor.feed(chunk)
+        self.stats['captured_chunks'] = self.stats.get('captured_chunks', 0) + 1
+        self.stats['last_audio_at'] = chunk.timestamp.isoformat()
+        self.stats['last_delivery_at'] = datetime.now().astimezone().isoformat()
+        self.stats['input_rms_db'] = float(20*np.log10(max(float(np.sqrt(np.mean(chunk.audio**2))),1e-10)))
+        if self.enrollment.feed(chunk.audio):
+            return
+        if not self.is_paused and not self.audio_capture.get_mute_status():
             self.audio_buffer.put(chunk)
 
     def start(self):
@@ -200,48 +218,105 @@ class VoiceJournalDaemon:
         """Worker thread for VAD processing and staging."""
         audio_buffer = []
         buffer_duration = 0.0
-        buffer_max = 30.0  # Process every 30 seconds (was 1800 = 30 min bug)
+        buffer_max = self.config.transcription.capture_chunk_seconds  # Process every 30 seconds (was 1800 = 30 min bug)
 
         while self.is_running and not self._shutdown_requested:
             try:
-                chunk = self.audio_buffer.get(timeout=1.0)
-                if chunk is None:
-                    break
-
-                if self.is_paused:
-                    continue
-
-                # Accumulate audio
-                audio_buffer.append(chunk)
-                buffer_duration += chunk.duration
-
-                # Process when buffer is full
+                # Retry retained audio before accepting more when processing was busy.
                 if buffer_duration >= buffer_max:
                     self._process_vad_buffer(audio_buffer)
                     audio_buffer = []
                     buffer_duration = 0.0
-
-            except queue.Empty:
-                # Process remaining buffer periodically
-                if audio_buffer:
-                    self._process_vad_buffer(audio_buffer)
-                    audio_buffer = []
-                    buffer_duration = 0.0
-
-            except Exception as e:
-                logger.error(f"VAD worker error: {e}")
+                    continue
+                try:
+                    chunk = self.audio_buffer.get(timeout=1.0)
+                except queue.Empty:
+                    if audio_buffer:
+                        self._process_vad_buffer(audio_buffer)
+                        audio_buffer = []
+                        buffer_duration = 0.0
+                    self._flush_continuous()
+                    continue
+                if chunk is None:
+                    break
+                if self.is_paused:
+                    continue
+                audio_buffer.append(chunk)
+                buffer_duration += chunk.duration
+            except TimeoutError:
+                # Enrollment/ASR can hold the shared lock. This is contention, not
+                # permission to terminate the only consumer of the capture queue.
+                self.stats['vad_lock_retries'] = self.stats.get('vad_lock_retries', 0) + 1
+                time.sleep(0.1)
+            except Exception as exc:
+                logger.error("VAD worker error: {}", type(exc).__name__)
                 self.stats['errors'] += 1
+                self.stats['last_vad_error'] = type(exc).__name__
+                time.sleep(0.1)
+
+        try:
+            if audio_buffer:
+                self._process_vad_buffer(audio_buffer)
+            self._flush_continuous()
+        except Exception as exc:
+            logger.error("VAD shutdown flush failed: {}", type(exc).__name__)
+
+    def _flush_continuous(self):
+        from datetime import timedelta
+        from utils.data_lock import capture_lock
+        # There is nothing to protect/flush while muted or calibrating. Avoid
+        # taking the ASR/enrollment lock on every idle queue timeout.
+        if self.continuous.start is None:
+            return
+        with capture_lock(self.config):
+            epoch = Path(self.config.database.path).parent.parent / 'runtime/reset_epoch'
+            if self.continuous.start is None:
+                return
+            if epoch.exists() and self.continuous.start.timestamp() <= float(epoch.read_text()):
+                self.continuous.reset()
+                return
+            require_external_storage(self.config)
+            expected = self.continuous.start + timedelta(seconds=len(self.continuous.audio) / self.config.audio.sample_rate)
+            for segment in self.continuous.feed(np.empty(0), expected, flush=True):
+                self.staging_queue.stage_segment(segment)
+                self.stats['vad_segments_detected'] += 1
+                self.stats['segments_staged'] += 1
+
+    def _check_vad_worker(self):
+        if self._shutdown_requested or not self.is_running:
+            return
+        if hasattr(self, 'vad_thread') and not self.vad_thread.is_alive():
+            self.stats['vad_worker_restarts'] = self.stats.get('vad_worker_restarts', 0) + 1
+            logger.error("VAD worker stopped unexpectedly; restarting consumer")
+            self.vad_thread = threading.Thread(target=self._vad_worker, daemon=True, name="VADWorker")
+            self.vad_thread.start()
 
     def _process_vad_buffer(self, chunks: list):
         """Process buffered audio chunks with VAD and stage for batch."""
         import numpy as np
 
-        # Combine audio chunks
-        audio_data = np.concatenate([c.audio for c in chunks])
-        reference_time = chunks[0].timestamp
+        require_external_storage(self.config)
+        from utils.data_lock import capture_lock
+        with capture_lock(self.config):
+            self._stage_vad_buffer(chunks)
 
-        # VAD processing
-        segments = self.vad_processor.process_audio_chunk(audio_data, reference_time)
+    def _stage_vad_buffer(self, chunks):
+        root = Path(self.config.database.path).parent.parent
+        epoch = root / 'runtime/reset_epoch'
+        if epoch.exists() and chunks[0].timestamp.timestamp() <= float(epoch.read_text()):
+            return
+        # Combine audio chunks
+        groups = [[chunks[0]]]
+        for chunk in chunks[1:]:
+            previous = groups[-1][-1]
+            gap = (chunk.timestamp - previous.timestamp).total_seconds() - previous.duration
+            if abs(gap) > 0.025:
+                groups.append([])
+            groups[-1].append(chunk)
+        segments = []
+        for group in groups:
+            segments.extend(self.continuous.feed(
+                np.concatenate([c.audio for c in group]), group[0].timestamp))
 
         # Stage each segment for batch processing
         for segment in segments:
@@ -262,6 +337,37 @@ class VoiceJournalDaemon:
 
         while self.is_running and not self._shutdown_requested:
             time.sleep(1)
+            self._check_vad_worker()
+            self.audio_capture.check_input()
+            self.enrollment.tick()
+            self.audio_capture.monitor_active = self.monitor.active
+            self.monitor.cleanup()
+            self.audio_capture.calibration_active = self.enrollment.active
+            epoch_path = Path(self.config.database.path).parent.parent / 'runtime/reset_epoch'
+            epoch = float(epoch_path.read_text()) if epoch_path.exists() else 0
+            if epoch > self._reset_epoch:
+                self.continuous.reset()
+                for key in ('vad_segments_detected', 'segments_staged', 'batch_jobs_completed', 'captured_chunks', 'errors'):
+                    self.stats[key] = 0
+                self._reset_epoch = epoch
+            from utils.data_lock import write_json
+            from zoneinfo import ZoneInfo
+            last_audio = self.stats.get('last_delivery_at')
+            audio_age = time.time() - datetime.fromisoformat(last_audio).timestamp() if last_audio else time.time() - self.stats['start_time'].timestamp()
+            capture_stalled = not self.audio_capture.get_mute_status() and not self.enrollment.active and audio_age > 10
+            write_json(Path(self.config.database.path).parent.parent / 'runtime/capture.json', dict(
+                {key: value.isoformat() if isinstance(value, datetime) else value for key, value in self.stats.items()}, updated_at=datetime.now(ZoneInfo('Asia/Kolkata')).isoformat(),
+                stream_active=bool(self.audio_capture.stream and self.audio_capture.stream.active),
+                capture_stalled=capture_stalled,
+                vad_worker_alive=bool(self.vad_thread.is_alive()),
+                capture_worker_alive=bool(self.audio_capture.process_thread.is_alive()),
+                capture_queue_depth=self.audio_capture.chunk_queue.qsize(),
+                vad_queue_depth=self.audio_buffer.qsize(),
+                input_overflows=self.audio_capture.input_overflows,
+                hardware_callbacks=self.audio_capture.hardware_callbacks,
+                selected_device=self.audio_capture.selected_device, device_error=self.audio_capture.device_error,
+                input_card=self.config.audio.input_card, input_jack_control=self.config.audio.input_jack_control,
+                muted=self.audio_capture.get_mute_status(), calibration_active=self.enrollment.active))
 
             # Periodic status log
             if time.time() - last_status_log > status_interval:

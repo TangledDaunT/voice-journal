@@ -1,17 +1,15 @@
-"""Voice Journal Package."""
-try:
-    # When installed as a package
-    from voice_journal.config.settings import Config
-    from voice_journal.daemon import VoiceJournalDaemon
-except ImportError:
-    # For development when the package is not installed but we are in the source tree
-    import os
-    import sys
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    from voice_journal.config.settings import Config
-    from voice_journal.daemon import VoiceJournalDaemon
+"""Voice Journal package; heavyweight capture dependencies load on demand."""
 
-__version__ = "1.0.0"
+from config.settings import Config
+
+__version__ = "2.0.0"
 __author__ = "Shreyansh"
-
 __all__ = ["Config", "VoiceJournalDaemon"]
+
+
+def __getattr__(name):
+    if name == "VoiceJournalDaemon":
+        from daemon_v2 import VoiceJournalDaemon
+
+        return VoiceJournalDaemon
+    raise AttributeError(name)
