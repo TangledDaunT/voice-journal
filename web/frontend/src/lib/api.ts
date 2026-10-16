@@ -1,6 +1,7 @@
 const API_BASE = '/api'
 
 export interface Conversation {
+  turns?: { start_ts: string; end_ts: string; text: string; speaker: string; status: string }[]
   id: number
   conversation_id: number
   date: string
@@ -16,6 +17,12 @@ export interface Conversation {
   transcript?: string
   raw_transcript?: string
   cleaned_transcript?: string
+  review_flags?: string[]
+  full_audio_url?: string | null
+  original_audio_url?: string | null
+  engine?: string
+  status?: string
+  segment_id?: string | null
   audio_url?: string | null
 }
 
@@ -46,6 +53,7 @@ export interface ShivangiStats {
 }
 
 export interface BacklogStatus {
+  invalid_segments?: number
   total_queued_hours: number
   segments_pending: number
   overflow_threshold: number
@@ -159,8 +167,81 @@ export const calibrationApi = {
 
 // Mute API
 export const muteApi = {
-  getStatus: () => fetch(`${API_BASE}/mute/status`).then(r => r.json()),
+  getStatus: () => apiJson<{ muted: boolean }>('/mute/status'),
 
   toggle: () =>
-    fetch(`${API_BASE}/mute`, { method: 'POST' }).then(r => r.json()),
+    apiJson<{ muted: boolean }>('/mute', { method: 'POST' }),
+}
+
+export async function fetchStorageStatus(): Promise<{ available: boolean; error?: string }> {
+  const response = await fetch(`${API_BASE}/storage`)
+  const data = await response.json()
+  if (!response.ok && response.status !== 503) throw new Error('Storage status unavailable')
+  return data
+}
+
+async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, init)
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`)
+  return data
+}
+
+export interface RuntimeStatus {
+  capture: { vad_worker_alive?: boolean; capture_worker_alive?: boolean; capture_stalled?: boolean; input_overflows?: number; capture_queue_depth?: number; vad_queue_depth?: number; input_card?: string; input_jack_control?: string; selected_device?: string; device_error?: string; fresh?: boolean; stream_active?: boolean; muted?: boolean; captured_chunks?: number; input_rms_db?: number; vad_segments_detected?: number; segments_staged?: number; last_audio_at?: string }
+  processing: { status?: string; engine?: string; last_error?: string; last_success_at?: string; last_latency_seconds?: number }
+  usage: { requests: number; audio_seconds: number; billed_seconds: number }
+  speakers?: { enabled: number; excluded_sources: number }
+  enrolled_only?: boolean
+  groq_configured: boolean
+  quarantined_files: number
+}
+export const fetchRuntime = () => apiJson<RuntimeStatus>('/runtime')
+export const dataApi = {
+  csvUrl: `${API_BASE}/data/export.csv`,
+  zipUrl: `${API_BASE}/data/export.zip`,
+  templateUrl: `${API_BASE}/data/template.csv`,
+  importCsv: (file: File) => { const body = new FormData(); body.append('file', file); return apiJson<{ imported: number; duplicates: number }>('/data/import', { method: 'POST', body }) },
+  clear: (confirmation: string) => apiJson<{ cleared: boolean }>('/data/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmation }) }),
+  testGroq: () => apiJson<{ ok: boolean; configured: boolean; status?: number }>('/groq/test', { method: 'POST' }),
+}
+
+export interface SpeakerProfile {
+  id: string
+  name: string
+  enabled: boolean
+  model: string
+  recorded_seconds: number
+  voiced_seconds: number
+  updated_at: string
+  quality: { self_consistency?: number; prototype_count?: number; accuracy_verified?: boolean }
+}
+export interface EnrollmentState {
+  id?: string
+  name?: string
+  status: 'idle' | 'queued' | 'recording' | 'analyzing' | 'complete' | 'error' | 'cancelled'
+  seconds_recorded?: number
+  input_rms_db?: number
+  error?: string
+  profile?: { name: string; id: string }
+}
+export interface SpeakerStatus {
+  profiles: SpeakerProfile[]
+  model_installed: boolean
+  enrolled_only: boolean
+  enrollment: EnrollmentState
+  similarity_threshold: number
+  similarity_margin: number
+}
+export const speakerApi = {
+  list: () => apiJson<SpeakerStatus>('/speakers'),
+  enroll: (name: string) => apiJson<EnrollmentState>('/speakers/enroll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
+  progress: () => apiJson<EnrollmentState>('/speakers/enrollment'),
+  cancel: () => apiJson<{ cancelled: boolean }>('/speakers/enrollment/cancel', { method: 'POST' }),
+  setEnabled: (id: string, enabled: boolean) => apiJson<{ enabled: boolean }>(`/speakers/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) }),
+}
+
+export const microphoneApi = {
+  listen: (enabled: boolean) => apiJson<{ listening: boolean }>('/microphone/listen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) }),
+  audio: (after: string, signal: AbortSignal) => fetch(`${API_BASE}/microphone/audio?after=${encodeURIComponent(after)}`, { cache: 'no-store', signal }),
 }

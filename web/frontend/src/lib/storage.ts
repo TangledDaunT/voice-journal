@@ -28,6 +28,6 @@ export function isDeepEqual(a: unknown, b: unknown): boolean {
 
 export function removeNullish<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return Object.fromEntries(
-    Object.entries(obj).filter(([_, v]) => v !== null && v !== undefined)
+    Object.entries(obj).filter(([, v]) => v !== null && v !== undefined)
   ) as Partial<T>
 }

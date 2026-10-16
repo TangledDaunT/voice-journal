@@ -6,6 +6,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatDuration(seconds: number): string {
+  seconds = Math.round(seconds)
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   const secs = seconds % 60
