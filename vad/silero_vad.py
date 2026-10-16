@@ -4,6 +4,7 @@ Emits discrete speech segments from continuous audio stream.
 """
 
 import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,9 @@ class SpeechSegment:
     audio: np.ndarray  # The audio data
     sample_rate: int
     start_offset_seconds: float = 0.0  # Offset from start of buffer
+
+    core_start_samples: int = 0
+    core_end_samples: Optional[int] = None
 
     @property
     def duration_seconds(self) -> float:
@@ -50,6 +54,7 @@ class SileroVAD:
         self.threshold = threshold
         self.model = None
         self.utils = None
+        self._inference_lock = threading.Lock()
         self._init_model()
 
     def _init_model(self):
@@ -107,14 +112,15 @@ class SileroVAD:
         audio_tensor = torch.from_numpy(audio.astype(np.float32))
 
         # Get speech timestamps using the utility function
-        speech_timestamps = self.utils[0](
-            audio_tensor,
-            self.model,
-            threshold=self.threshold,
-            sampling_rate=self.SAMPLE_RATE,
-            min_speech_duration_ms=300,
-            min_silence_duration_ms=100
-        )
+        with self._inference_lock:
+            speech_timestamps = self.utils[0](
+                audio_tensor,
+                self.model,
+                threshold=self.threshold,
+                sampling_rate=self.SAMPLE_RATE,
+                min_speech_duration_ms=300,
+                min_silence_duration_ms=100
+            )
 
         segments = []
         for ts in speech_timestamps:
@@ -176,8 +182,8 @@ class VADProcessor:
                 start_offset = start_sample / SileroVAD.SAMPLE_RATE
 
                 segment = SpeechSegment(
-                    start_time=datetime.fromtimestamp(reference_time.timestamp() + start_offset),
-                    end_time=datetime.fromtimestamp(reference_time.timestamp() + start_offset + duration),
+                    start_time=datetime.fromtimestamp(reference_time.timestamp() + start_offset, tz=reference_time.tzinfo),
+                    end_time=datetime.fromtimestamp(reference_time.timestamp() + start_offset + duration, tz=reference_time.tzinfo),
                     audio=segment_audio,
                     sample_rate=SileroVAD.SAMPLE_RATE,
                     start_offset_seconds=start_offset
@@ -206,8 +212,8 @@ class VADProcessor:
             start_offset = current_start / SileroVAD.SAMPLE_RATE
 
             segment = SpeechSegment(
-                start_time=datetime.fromtimestamp(reference_time.timestamp() + start_offset),
-                end_time=datetime.fromtimestamp(reference_time.timestamp() + start_offset + duration),
+                start_time=datetime.fromtimestamp(reference_time.timestamp() + start_offset, tz=reference_time.tzinfo),
+                end_time=datetime.fromtimestamp(reference_time.timestamp() + start_offset + duration, tz=reference_time.tzinfo),
                 audio=segment_audio,
                 sample_rate=SileroVAD.SAMPLE_RATE,
                 start_offset_seconds=start_offset
