@@ -12,19 +12,24 @@ services:
     group_add:
       - audio
     volumes:
-      - ${DATA_ROOT:?Set DATA_ROOT to the external disk mount, e.g. /mnt/voice-journal}:/data:rw
+      - type: bind
+        source: ${DATA_ROOT:?Set DATA_ROOT to /mnt/music-drive}
+        target: /data
+        bind:
+          create_host_path: false
       - ./models:/app/models:ro
       - ./logs:/app/logs:rw
       - ./config:/app/config:ro
       # Bind-mount patched sources so container recreates never lose fixes
       - ./storage/daily_journal.py:/app/storage/daily_journal.py:ro
       # Persist whisper model cache across daemon recreates (no re-download)
-      - ./hf_cache:/root/.cache/huggingface:rw
+      - ${DATA_ROOT:?Set DATA_ROOT}/voice-journal/cache/huggingface:/root/.cache/huggingface:rw
     devices:
       - /dev/snd:/dev/snd
     environment:
       - DATA_ROOT=/data
       - TZ=Asia/Kolkata
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
       - VJ_AUDIO_SAMPLE_RATE=16000
       - VJ_AUDIO_CHANNELS=1
       - VJ_AUDIO_BLOCK_SIZE=2048
@@ -44,7 +49,11 @@ services:
     group_add:
       - audio
     volumes:
-      - ${DATA_ROOT:?Set DATA_ROOT to the external disk mount, e.g. /mnt/voice-journal}:/data:rw
+      - type: bind
+        source: ${DATA_ROOT:?Set DATA_ROOT to /mnt/music-drive}
+        target: /data
+        bind:
+          create_host_path: false
       - ./models:/app/models:ro
       - ./logs:/app/logs:rw
       - ./config:/app/config:ro
@@ -55,9 +64,9 @@ services:
     environment:
       - DATA_ROOT=/data
       - TZ=Asia/Kolkata
-      - WEB_AUTH_TOKEN=${WEB_AUTH_TOKEN:-voice-journal-secret-2026}
-      - WEB_AUTH_USERNAME=Shreyansh
-      - WEB_AUTH_PASSWORD=Shreyanshlovesshivangi@7754008079
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - WEB_AUTH_USERNAME=${WEB_AUTH_USERNAME:?Set WEB_AUTH_USERNAME}
+      - WEB_AUTH_PASSWORD=${WEB_AUTH_PASSWORD:?Set WEB_AUTH_PASSWORD}
     command: ["python", "web/app.py", "--host", "0.0.0.0", "--port", "5000"]
     ports:
       # HTTPS is provided by Tailscale serve -> 127.0.0.1:5000
